@@ -1,0 +1,1 @@
+"""Fund archive backend service."""

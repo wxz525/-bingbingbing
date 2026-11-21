@@ -1,0 +1,84 @@
+# =============================================================================
+# 数据 ETL 中间件：MySQL（元数据） + ClickHouse（数仓） + MinIO（研报正文）
+#
+# 启动方式（在项目根目录执行，复用根目录 .env 中的账号密码）：
+#   docker compose -f docker‑compose/docker-compose.yml --env-file .env up -d
+#
+# 首次启动且数据卷为空时，容器会自动执行 data‑etl/sql 下的建库建表脚本：
+#   MySQL      -> 01_mysql_ddl.sql
+#   ClickHouse -> 02_clickhouse_ddl.sql
+# 如需重置并重新初始化，先 down -v 删除数据卷，再 up -d。
+#
+# 端口说明：ClickHouse native 占用宿主机 9000（clickhouse-driver 默认端口），
+#           为避免冲突，MinIO API 映射到 9002、控制台映射到 9003。
+# =============================================================================
+
+name: guoyuan-trae
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: gy-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:?请先在 .env 中设置 MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gy_meta}
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../data‑etl/sql/01_mysql_ddl.sql:/docker-entrypoint-initdb.d/01_mysql_ddl.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: gy-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?请先在 .env 中设置 CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      TZ: Asia/Shanghai
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    ports:
+      - "8123:8123"                                  # HTTP 接口
+      - "${CLICKHOUSE_PORT:-9000}:9000"              # native 接口（ETL 使用）
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ../data‑etl/sql/02_clickhouse_ddl.sql:/docker-entrypoint-initdb.d/02_clickhouse_ddl.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' --password $$CLICKHOUSE_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  minio:
+    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    container_name: gy-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?请先在 .env 中设置 MINIO_SECRET_KEY}
+      TZ: Asia/Shanghai
+    ports:
+      - "9002:9000"                                  # S3 API（ETL 使用）
+      - "9003:9001"                                  # Web 控制台
+    volumes:
+      - minio-data:/data
+
+volumes:
+  mysql-data:
+  clickhouse-data:
+  minio-data:

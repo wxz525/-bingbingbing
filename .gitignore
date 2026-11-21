@@ -1,0 +1,20 @@
+# ===== 原始竞赛数据：不提交 git，仅本地留存 =====
+data/
+
+# ===== Python 缓存 =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ===== 本地敏感配置（含数据库账号密码，禁止提交）=====
+.env
+*.local.yaml
+config.local.yaml
+# 但模板要提交，供组员复制
+!.env.example
+
+# ===== 临时文件 / 日志 =====
+*.tmp
+*.log
+logs/

@@ -1,0 +1,8 @@
+# 国元证券 TRAE 金科竞赛 - data-etl 依赖
+pandas>=2.0
+openpyxl>=3.1          # 读取 xlsx
+PyMySQL>=1.1           # MySQL 连接
+clickhouse-driver>=0.2.6   # ClickHouse native 连接
+minio>=7.2             # MinIO 对象存储
+PyYAML>=6.0            # 配置解析
+python-dotenv>=1.0     # 读取项目根 .env（数据库账号密码）

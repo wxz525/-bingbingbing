@@ -6,6 +6,20 @@ const props = defineProps<{
   field: string
 }>()
 
+type SeriesKey = 'close' | 'ma5' | 'ma20' | 'ma60' | 'boll'
+
+const visible = ref<Record<SeriesKey, boolean>>({
+  close: true,
+  ma5: false,
+  ma20: false,
+  ma60: false,
+  boll: false,
+})
+
+function toggleSeries(key: SeriesKey): void {
+  visible.value[key] = !visible.value[key]
+}
+
 const WIDTH = 960
 const HEIGHT = 340
 const PADDING = { left: 62, right: 18, top: 18, bottom: 30 }
@@ -55,8 +69,21 @@ const boll = computed(() => {
 })
 
 const overlayValues = computed(() => {
+  const seriesList: (number | null)[][] = []
+  if (visible.value.ma5) {
+    seriesList.push(ma5.value)
+  }
+  if (visible.value.ma20) {
+    seriesList.push(ma20.value)
+  }
+  if (visible.value.ma60) {
+    seriesList.push(ma60.value)
+  }
+  if (visible.value.boll) {
+    seriesList.push(boll.value.upper, boll.value.lower)
+  }
   const all: number[] = []
-  for (const series of [ma5.value, ma20.value, ma60.value, boll.value.upper, boll.value.lower]) {
+  for (const series of seriesList) {
     for (const value of series) {
       if (value !== null) {
         all.push(value)
@@ -67,11 +94,11 @@ const overlayValues = computed(() => {
 })
 
 const minValue = computed(() => {
-  const all = values.value.concat(overlayValues.value)
+  const all = overlayValues.value.concat(visible.value.close ? values.value : [])
   return all.length ? Math.min(...all) : 0
 })
 const maxValue = computed(() => {
-  const all = values.value.concat(overlayValues.value)
+  const all = overlayValues.value.concat(visible.value.close ? values.value : [])
   return all.length ? Math.max(...all) : 1
 })
 
@@ -264,22 +291,52 @@ const hoverPoint = computed(() => {
 <template>
   <div class="market-chart" @mousemove="handleMove" @mouseleave="handleLeave">
     <div class="market-chart__legend">
-      <span class="market-chart__legend-item">
+      <button
+        type="button"
+        class="market-chart__legend-item"
+        :class="{ 'is-off': !visible.close }"
+        :aria-pressed="visible.close"
+        @click="toggleSeries('close')"
+      >
         <i class="market-chart__legend-swatch market-chart__legend-swatch--main"></i>
         {{ field === 'yield' ? '收益率' : '收盘价' }}
-      </span>
-      <span class="market-chart__legend-item">
+      </button>
+      <button
+        type="button"
+        class="market-chart__legend-item"
+        :class="{ 'is-off': !visible.ma5 }"
+        :aria-pressed="visible.ma5"
+        @click="toggleSeries('ma5')"
+      >
         <i class="market-chart__legend-swatch market-chart__legend-swatch--ma5"></i>MA5
-      </span>
-      <span class="market-chart__legend-item">
+      </button>
+      <button
+        type="button"
+        class="market-chart__legend-item"
+        :class="{ 'is-off': !visible.ma20 }"
+        :aria-pressed="visible.ma20"
+        @click="toggleSeries('ma20')"
+      >
         <i class="market-chart__legend-swatch market-chart__legend-swatch--ma20"></i>MA20
-      </span>
-      <span class="market-chart__legend-item">
+      </button>
+      <button
+        type="button"
+        class="market-chart__legend-item"
+        :class="{ 'is-off': !visible.ma60 }"
+        :aria-pressed="visible.ma60"
+        @click="toggleSeries('ma60')"
+      >
         <i class="market-chart__legend-swatch market-chart__legend-swatch--ma60"></i>MA60
-      </span>
-      <span class="market-chart__legend-item">
+      </button>
+      <button
+        type="button"
+        class="market-chart__legend-item"
+        :class="{ 'is-off': !visible.boll }"
+        :aria-pressed="visible.boll"
+        @click="toggleSeries('boll')"
+      >
         <i class="market-chart__legend-swatch market-chart__legend-swatch--boll"></i>BOLL(20,2)
-      </span>
+      </button>
     </div>
     <svg :viewBox="`0 0 ${WIDTH} ${HEIGHT}`" class="market-chart__svg" role="img">
       <defs>
@@ -321,32 +378,36 @@ const hoverPoint = computed(() => {
         {{ tick.label }}
       </text>
 
-      <path :d="bandAreaPath" class="market-chart__band" />
-      <path :d="areaPath" fill="url(#market-area-gradient)" />
-      <path :d="linePath" class="market-chart__line" />
+      <path v-if="visible.boll" :d="bandAreaPath" class="market-chart__band" />
+      <path v-if="visible.close" :d="areaPath" fill="url(#market-area-gradient)" />
+      <path v-if="visible.close" :d="linePath" class="market-chart__line" />
 
-      <path :d="bollPaths.upper" class="market-chart__overlay market-chart__overlay--boll" />
-      <path :d="bollPaths.lower" class="market-chart__overlay market-chart__overlay--boll" />
-      <path :d="bollPaths.middle" class="market-chart__overlay market-chart__overlay--boll-mid" />
-      <path :d="maPaths.ma60" class="market-chart__overlay market-chart__overlay--ma60" />
-      <path :d="maPaths.ma20" class="market-chart__overlay market-chart__overlay--ma20" />
-      <path :d="maPaths.ma5" class="market-chart__overlay market-chart__overlay--ma5" />
+      <template v-if="visible.boll">
+        <path :d="bollPaths.upper" class="market-chart__overlay market-chart__overlay--boll" />
+        <path :d="bollPaths.lower" class="market-chart__overlay market-chart__overlay--boll" />
+        <path :d="bollPaths.middle" class="market-chart__overlay market-chart__overlay--boll-mid" />
+      </template>
+      <path v-if="visible.ma60" :d="maPaths.ma60" class="market-chart__overlay market-chart__overlay--ma60" />
+      <path v-if="visible.ma20" :d="maPaths.ma20" class="market-chart__overlay market-chart__overlay--ma20" />
+      <path v-if="visible.ma5" :d="maPaths.ma5" class="market-chart__overlay market-chart__overlay--ma5" />
 
-      <g v-for="marker in extremumMarkers" :key="marker.kind">
-        <circle
-          :cx="marker.x"
-          :cy="marker.y"
-          r="3.2"
-          :class="`market-chart__extremum market-chart__extremum--${marker.kind}`"
-        />
-        <text
-          :x="marker.labelX"
-          :y="marker.labelY"
-          :class="`market-chart__extremum-label market-chart__extremum-label--${marker.kind}`"
-          text-anchor="middle"
-        >
-          {{ marker.text }}
-        </text>
+      <g v-if="visible.close">
+        <g v-for="marker in extremumMarkers" :key="marker.kind">
+          <circle
+            :cx="marker.x"
+            :cy="marker.y"
+            r="3.2"
+            :class="`market-chart__extremum market-chart__extremum--${marker.kind}`"
+          />
+          <text
+            :x="marker.labelX"
+            :y="marker.labelY"
+            :class="`market-chart__extremum-label market-chart__extremum-label--${marker.kind}`"
+            text-anchor="middle"
+          >
+            {{ marker.text }}
+          </text>
+        </g>
       </g>
 
       <g v-if="hoverPoint">
@@ -358,6 +419,7 @@ const hoverPoint = computed(() => {
           class="market-chart__crosshair"
         />
         <circle
+          v-if="visible.close"
           :cx="(hoverPoint.x / 100) * WIDTH"
           :cy="(hoverPoint.y / 100) * HEIGHT"
           r="4"
@@ -367,7 +429,7 @@ const hoverPoint = computed(() => {
     </svg>
 
     <div
-      v-if="hoverPoint"
+      v-if="hoverPoint && visible.close"
       class="market-chart__tooltip"
       :style="{ left: `${hoverPoint.x}%`, top: `${hoverPoint.y}%` }"
     >
@@ -396,6 +458,25 @@ const hoverPoint = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: color 0.15s, opacity 0.15s;
+}
+
+.market-chart__legend-item:hover {
+  opacity: 0.75;
+}
+
+.market-chart__legend-item.is-off {
+  color: #c0c4cc;
+}
+
+.market-chart__legend-item.is-off .market-chart__legend-swatch {
+  opacity: 0.3;
 }
 
 .market-chart__legend-swatch {

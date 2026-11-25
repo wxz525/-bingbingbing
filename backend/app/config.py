@@ -24,10 +24,17 @@ class Settings(BaseSettings):
     default_operator: str = "system"
     etl_system_operator: str = "etl-system"
     cors_allow_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    market_data_dir: str = ""
 
     @property
     def cors_origins(self) -> list[str]:
         return [item.strip() for item in self.cors_allow_origins.split(",") if item.strip()]
+
+    @property
+    def market_data_path(self) -> Path:
+        if self.market_data_dir.strip():
+            return Path(self.market_data_dir.strip()).expanduser()
+        return _PROJECT_DIR.parent / "data" / "目标资产价格变量"
 
     @field_validator("default_operator", "etl_system_operator")
     @classmethod

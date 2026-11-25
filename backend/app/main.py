@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import router
+from app.api import market_router, router
 from app.config import get_settings
 from app.database import create_database_engine
 from app.errors import register_exception_handlers
+from app.market_repository import MarketDataRepository
+from app.market_service import MarketService
 from app.repository import FundArchiveRepository
 from app.service import EtlRedemptionRuleService, FundArchiveService
 
@@ -13,6 +15,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     engine = create_database_engine(settings)
     repository = FundArchiveRepository(engine)
+    market_repository = MarketDataRepository(settings.market_data_path)
 
     application = FastAPI(title="Fund Archive API", version="1.0.0")
     application.add_middleware(
@@ -28,7 +31,9 @@ def create_app() -> FastAPI:
         repository,
         settings.etl_system_operator,
     )
+    application.state.market_service = MarketService(market_repository)
     application.include_router(router)
+    application.include_router(market_router)
     register_exception_handlers(application)
     return application
 

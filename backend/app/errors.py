@@ -53,6 +53,11 @@ class VersionConflict(ApiError):
         super().__init__(409, "VERSION_CONFLICT", "申赎要素已更新，请刷新后重试")
 
 
+class MarketAssetNotFound(ApiError):
+    def __init__(self) -> None:
+        super().__init__(404, "MARKET_ASSET_NOT_FOUND", "行情标的或数据文件不存在")
+
+
 def error_content(code: str, message: str, field_errors: dict[str, str] | None = None) -> dict[str, Any]:
     return {
         "code": code,

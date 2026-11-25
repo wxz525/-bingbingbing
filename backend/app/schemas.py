@@ -222,3 +222,27 @@ class FundArchiveListResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class MarketAssetInfo(BaseModel):
+    name: str
+    category: str
+    wind_code: str | None = None
+    field: str
+    start_date: date
+    end_date: date
+    row_count: int
+
+
+class MarketAssetListResponse(BaseModel):
+    items: list[MarketAssetInfo]
+
+
+class MarketSeriesResponse(BaseModel):
+    name: str
+    category: str
+    wind_code: str | None = None
+    field: str
+    start_date: date
+    end_date: date
+    points: list[tuple[str, float]]

@@ -95,6 +95,211 @@ const stats = computed(() => {
   }
 })
 
+const TRADING_DAYS = 252
+const RISK_FREE_RATE = 0.02
+
+function dailyReturns(values: number[]): number[] {
+  const returns: number[] = []
+  for (let index = 1; index < values.length; index += 1) {
+    const previous = values[index - 1]
+    if (previous !== 0) {
+      returns.push(values[index] / previous - 1)
+    }
+  }
+  return returns
+}
+
+function annualizedReturn(values: number[]): number | null {
+  if (values.length < 20 || values[0] <= 0) {
+    return null
+  }
+  const growth = values[values.length - 1] / values[0]
+  return growth ** (TRADING_DAYS / (values.length - 1)) - 1
+}
+
+function annualizedVolatility(values: number[]): number | null {
+  const returns = dailyReturns(values)
+  if (returns.length < 20) {
+    return null
+  }
+  const mean = returns.reduce((sum, item) => sum + item, 0) / returns.length
+  const variance =
+    returns.reduce((sum, item) => sum + (item - mean) ** 2, 0) / (returns.length - 1)
+  return Math.sqrt(variance) * Math.sqrt(TRADING_DAYS)
+}
+
+function annualizedVolatilityBp(values: number[]): number | null {
+  if (values.length < 21) {
+    return null
+  }
+  const changes: number[] = []
+  for (let index = 1; index < values.length; index += 1) {
+    changes.push((values[index] - values[index - 1]) * 100)
+  }
+  const mean = changes.reduce((sum, item) => sum + item, 0) / changes.length
+  const variance =
+    changes.reduce((sum, item) => sum + (item - mean) ** 2, 0) / (changes.length - 1)
+  return Math.sqrt(variance) * Math.sqrt(TRADING_DAYS)
+}
+
+function maxDrawdown(
+  points: [string, number][],
+): { value: number; peakDate: string; troughDate: string } | null {
+  if (points.length < 2) {
+    return null
+  }
+  let peak = points[0][1]
+  let peakIndex = 0
+  let worst = 0
+  let worstPeakIndex = 0
+  let worstTroughIndex = 0
+  for (let index = 1; index < points.length; index += 1) {
+    const value = points[index][1]
+    if (value > peak) {
+      peak = value
+      peakIndex = index
+    }
+    const drawdown = peak === 0 ? 0 : value / peak - 1
+    if (drawdown < worst) {
+      worst = drawdown
+      worstPeakIndex = peakIndex
+      worstTroughIndex = index
+    }
+  }
+  return {
+    value: worst,
+    peakDate: points[worstPeakIndex][0],
+    troughDate: points[worstTroughIndex][0],
+  }
+}
+
+function movingAverageSeries(values: number[], period: number): number[] {
+  const factor = 2 / (period + 1)
+  const result = [values[0]]
+  for (let index = 1; index < values.length; index += 1) {
+    result.push(values[index] * factor + result[index - 1] * (1 - factor))
+  }
+  return result
+}
+
+function computeRsi(values: number[], period = 14): number | null {
+  if (values.length <= period) {
+    return null
+  }
+  let gain = 0
+  let loss = 0
+  for (let index = 1; index <= period; index += 1) {
+    const delta = values[index] - values[index - 1]
+    if (delta >= 0) {
+      gain += delta
+    } else {
+      loss -= delta
+    }
+  }
+  let averageGain = gain / period
+  let averageLoss = loss / period
+  for (let index = period + 1; index < values.length; index += 1) {
+    const delta = values[index] - values[index - 1]
+    averageGain = (averageGain * (period - 1) + Math.max(delta, 0)) / period
+    averageLoss = (averageLoss * (period - 1) + Math.max(-delta, 0)) / period
+  }
+  if (averageLoss === 0) {
+    return 100
+  }
+  return 100 - 100 / (1 + averageGain / averageLoss)
+}
+
+function computeMacd(
+  values: number[],
+): { dif: number; dea: number; histogram: number } | null {
+  if (values.length < 35) {
+    return null
+  }
+  const fast = movingAverageSeries(values, 12)
+  const slow = movingAverageSeries(values, 26)
+  const dif = values.map((_, index) => fast[index] - slow[index])
+  const dea = movingAverageSeries(dif, 9)
+  const lastIndex = values.length - 1
+  return {
+    dif: dif[lastIndex],
+    dea: dea[lastIndex],
+    histogram: (dif[lastIndex] - dea[lastIndex]) * 2,
+  }
+}
+
+interface MetricCard {
+  label: string
+  value: string
+  hint: string
+  tone?: 'up' | 'down'
+}
+
+const extraCards = computed<MetricCard[]>(() => {
+  const points = visiblePoints.value
+  if (points.length < 2) {
+    return []
+  }
+  const values = points.map((point) => point[1])
+  const isYield = series.value?.field === 'yield'
+  const cards: MetricCard[] = []
+  const rsi = computeRsi(values)
+  const macd = computeMacd(values)
+
+  if (isYield) {
+    const volatilityBp = annualizedVolatilityBp(values)
+    cards.push({
+      label: '年化波动',
+      value: volatilityBp === null ? '—' : `${volatilityBp.toFixed(1)}bp`,
+      hint: '日变动标准差 × √252',
+    })
+  } else {
+    const annualReturn = annualizedReturn(values)
+    const volatility = annualizedVolatility(values)
+    const drawdown = maxDrawdown(points)
+    const sharpe =
+      annualReturn !== null && volatility !== null && volatility > 0
+        ? (annualReturn - RISK_FREE_RATE) / volatility
+        : null
+    cards.push({
+      label: '年化收益率',
+      value:
+        annualReturn === null
+          ? '—'
+          : `${annualReturn >= 0 ? '+' : ''}${(annualReturn * 100).toFixed(2)}%`,
+      hint: '按 252 个交易日年化',
+      tone: annualReturn === null ? undefined : annualReturn >= 0 ? 'up' : 'down',
+    })
+    cards.push({
+      label: '年化波动率',
+      value: volatility === null ? '—' : `${(volatility * 100).toFixed(2)}%`,
+      hint: '日收益标准差 × √252',
+    })
+    cards.push({
+      label: '最大回撤',
+      value: drawdown === null ? '—' : `${(drawdown.value * 100).toFixed(2)}%`,
+      hint: drawdown === null ? '区间过短' : `${drawdown.peakDate} → ${drawdown.troughDate}`,
+    })
+    cards.push({
+      label: '夏普比率',
+      value: sharpe === null ? '—' : sharpe.toFixed(2),
+      hint: `无风险利率按 ${(RISK_FREE_RATE * 100).toFixed(1)}%`,
+    })
+  }
+
+  cards.push({
+    label: 'RSI(14)',
+    value: rsi === null ? '—' : rsi.toFixed(1),
+    hint: rsi === null ? '数据不足 15 个交易日' : rsi >= 70 ? '超买区间' : rsi <= 30 ? '超卖区间' : '中性区间',
+  })
+  cards.push({
+    label: 'MACD(12,26,9)',
+    value: macd === null ? '—' : `${macd.histogram >= 0 ? '+' : ''}${macd.histogram.toFixed(3)}`,
+    hint: macd === null ? '数据不足 35 个交易日' : `DIF ${macd.dif.toFixed(3)} / DEA ${macd.dea.toFixed(3)}`,
+    tone: macd === null ? undefined : macd.histogram >= 0 ? 'up' : 'down',
+  })
+  return cards
+})
+
 function formatValue(value: number, isYield: boolean): string {
   if (isYield) {
     return `${value.toFixed(3)}%`
@@ -233,6 +438,16 @@ onMounted(loadAssets)
             {{ selectedAsset?.start_date }} ~ {{ selectedAsset?.end_date }}
           </span>
           <span class="market-stat__hint">共 {{ selectedAsset?.row_count }} 条</span>
+        </div>
+        <div v-for="card in extraCards" :key="card.label" class="market-stat">
+          <span class="market-stat__label">{{ card.label }}</span>
+          <span
+            class="market-stat__value"
+            :class="card.tone ? (card.tone === 'up' ? 'is-up' : 'is-down') : ''"
+          >
+            {{ card.value }}
+          </span>
+          <span class="market-stat__hint">{{ card.hint }}</span>
         </div>
       </div>
 

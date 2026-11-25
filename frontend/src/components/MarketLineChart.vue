@@ -14,8 +14,66 @@ const plotWidth = WIDTH - PADDING.left - PADDING.right
 const plotHeight = HEIGHT - PADDING.top - PADDING.bottom
 
 const values = computed(() => props.points.map((point) => point[1]))
-const minValue = computed(() => (values.value.length ? Math.min(...values.value) : 0))
-const maxValue = computed(() => (values.value.length ? Math.max(...values.value) : 1))
+
+function movingAverage(period: number): (number | null)[] {
+  const list = values.value
+  const result: (number | null)[] = new Array(list.length).fill(null)
+  let sum = 0
+  for (let index = 0; index < list.length; index += 1) {
+    sum += list[index]
+    if (index >= period) {
+      sum -= list[index - period]
+    }
+    if (index >= period - 1) {
+      result[index] = sum / period
+    }
+  }
+  return result
+}
+
+const ma5 = computed(() => movingAverage(5))
+const ma20 = computed(() => movingAverage(20))
+const ma60 = computed(() => movingAverage(60))
+
+const BOLL_PERIOD = 20
+const BOLL_MULTIPLIER = 2
+
+const boll = computed(() => {
+  const list = values.value
+  const middle = movingAverage(BOLL_PERIOD)
+  const upper: (number | null)[] = new Array(list.length).fill(null)
+  const lower: (number | null)[] = new Array(list.length).fill(null)
+  for (let index = BOLL_PERIOD - 1; index < list.length; index += 1) {
+    const window = list.slice(index - BOLL_PERIOD + 1, index + 1)
+    const mean = middle[index] as number
+    const variance = window.reduce((sum, item) => sum + (item - mean) ** 2, 0) / BOLL_PERIOD
+    const deviation = Math.sqrt(variance) * BOLL_MULTIPLIER
+    upper[index] = mean + deviation
+    lower[index] = mean - deviation
+  }
+  return { middle, upper, lower }
+})
+
+const overlayValues = computed(() => {
+  const all: number[] = []
+  for (const series of [ma5.value, ma20.value, ma60.value, boll.value.upper, boll.value.lower]) {
+    for (const value of series) {
+      if (value !== null) {
+        all.push(value)
+      }
+    }
+  }
+  return all
+})
+
+const minValue = computed(() => {
+  const all = values.value.concat(overlayValues.value)
+  return all.length ? Math.min(...all) : 0
+})
+const maxValue = computed(() => {
+  const all = values.value.concat(overlayValues.value)
+  return all.length ? Math.max(...all) : 1
+})
 
 const scale = computed(() => {
   const span = maxValue.value - minValue.value
@@ -52,6 +110,81 @@ const areaPath = computed(() => {
   }
   const last = props.points.length - 1
   return `${linePath.value} L${xFor(last).toFixed(1)},${PADDING.top + plotHeight} L${xFor(0).toFixed(1)},${PADDING.top + plotHeight} Z`
+})
+
+function seriesPath(series: (number | null)[]): string {
+  const parts: string[] = []
+  series.forEach((value, index) => {
+    if (value === null) {
+      return
+    }
+    parts.push(`${parts.length === 0 ? 'M' : 'L'}${xFor(index).toFixed(1)},${yFor(value).toFixed(1)}`)
+  })
+  return parts.join(' ')
+}
+
+const maPaths = computed(() => ({
+  ma5: seriesPath(ma5.value),
+  ma20: seriesPath(ma20.value),
+  ma60: seriesPath(ma60.value),
+}))
+
+const bollPaths = computed(() => ({
+  upper: seriesPath(boll.value.upper),
+  middle: seriesPath(boll.value.middle),
+  lower: seriesPath(boll.value.lower),
+}))
+
+const bandAreaPath = computed(() => {
+  const upper = boll.value.upper
+  const lower = boll.value.lower
+  const indices: number[] = []
+  for (let index = 0; index < props.points.length; index += 1) {
+    if (upper[index] !== null && lower[index] !== null) {
+      indices.push(index)
+    }
+  }
+  if (indices.length < 2) {
+    return ''
+  }
+  const top = indices.map(
+    (index) => `${xFor(index).toFixed(1)},${yFor(upper[index] as number).toFixed(1)}`,
+  )
+  const bottom = indices
+    .slice()
+    .reverse()
+    .map((index) => `${xFor(index).toFixed(1)},${yFor(lower[index] as number).toFixed(1)}`)
+  return `M${top.join(' L')} L${bottom.join(' L')} Z`
+})
+
+const extremumMarkers = computed(() => {
+  const list = props.points
+  if (list.length < 2) {
+    return []
+  }
+  let maxIndex = 0
+  let minIndex = 0
+  list.forEach((point, index) => {
+    if (point[1] > list[maxIndex][1]) {
+      maxIndex = index
+    }
+    if (point[1] < list[minIndex][1]) {
+      minIndex = index
+    }
+  })
+  const build = (index: number, kind: 'max' | 'min') => {
+    const x = xFor(index)
+    const y = yFor(list[index][1])
+    return {
+      kind,
+      x,
+      y,
+      labelX: Math.min(Math.max(x, PADDING.left + 52), WIDTH - PADDING.right - 52),
+      labelY: kind === 'max' ? y - 9 : y + 15,
+      text: `${formatValue(list[index][1])} · ${list[index][0]}`,
+    }
+  }
+  return [build(maxIndex, 'max'), build(minIndex, 'min')]
 })
 
 function formatValue(value: number): string {
@@ -130,6 +263,24 @@ const hoverPoint = computed(() => {
 
 <template>
   <div class="market-chart" @mousemove="handleMove" @mouseleave="handleLeave">
+    <div class="market-chart__legend">
+      <span class="market-chart__legend-item">
+        <i class="market-chart__legend-swatch market-chart__legend-swatch--main"></i>
+        {{ field === 'yield' ? '收益率' : '收盘价' }}
+      </span>
+      <span class="market-chart__legend-item">
+        <i class="market-chart__legend-swatch market-chart__legend-swatch--ma5"></i>MA5
+      </span>
+      <span class="market-chart__legend-item">
+        <i class="market-chart__legend-swatch market-chart__legend-swatch--ma20"></i>MA20
+      </span>
+      <span class="market-chart__legend-item">
+        <i class="market-chart__legend-swatch market-chart__legend-swatch--ma60"></i>MA60
+      </span>
+      <span class="market-chart__legend-item">
+        <i class="market-chart__legend-swatch market-chart__legend-swatch--boll"></i>BOLL(20,2)
+      </span>
+    </div>
     <svg :viewBox="`0 0 ${WIDTH} ${HEIGHT}`" class="market-chart__svg" role="img">
       <defs>
         <linearGradient id="market-area-gradient" x1="0" y1="0" x2="0" y2="1">
@@ -170,8 +321,33 @@ const hoverPoint = computed(() => {
         {{ tick.label }}
       </text>
 
+      <path :d="bandAreaPath" class="market-chart__band" />
       <path :d="areaPath" fill="url(#market-area-gradient)" />
       <path :d="linePath" class="market-chart__line" />
+
+      <path :d="bollPaths.upper" class="market-chart__overlay market-chart__overlay--boll" />
+      <path :d="bollPaths.lower" class="market-chart__overlay market-chart__overlay--boll" />
+      <path :d="bollPaths.middle" class="market-chart__overlay market-chart__overlay--boll-mid" />
+      <path :d="maPaths.ma60" class="market-chart__overlay market-chart__overlay--ma60" />
+      <path :d="maPaths.ma20" class="market-chart__overlay market-chart__overlay--ma20" />
+      <path :d="maPaths.ma5" class="market-chart__overlay market-chart__overlay--ma5" />
+
+      <g v-for="marker in extremumMarkers" :key="marker.kind">
+        <circle
+          :cx="marker.x"
+          :cy="marker.y"
+          r="3.2"
+          :class="`market-chart__extremum market-chart__extremum--${marker.kind}`"
+        />
+        <text
+          :x="marker.labelX"
+          :y="marker.labelY"
+          :class="`market-chart__extremum-label market-chart__extremum-label--${marker.kind}`"
+          text-anchor="middle"
+        >
+          {{ marker.text }}
+        </text>
+      </g>
 
       <g v-if="hoverPoint">
         <line
@@ -205,6 +381,108 @@ const hoverPoint = computed(() => {
 .market-chart {
   position: relative;
   width: 100%;
+}
+
+.market-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 0 4px 6px;
+  font-size: 12px;
+  color: #606266;
+}
+
+.market-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.market-chart__legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.market-chart__legend-swatch--main {
+  background: #409eff;
+}
+
+.market-chart__legend-swatch--ma5 {
+  background: #f59f00;
+}
+
+.market-chart__legend-swatch--ma20 {
+  background: #9c36b5;
+}
+
+.market-chart__legend-swatch--ma60 {
+  background: #2b8a3e;
+}
+
+.market-chart__legend-swatch--boll {
+  background: #a0cfff;
+}
+
+.market-chart__overlay {
+  fill: none;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.market-chart__overlay--ma5 {
+  stroke: #f59f00;
+}
+
+.market-chart__overlay--ma20 {
+  stroke: #9c36b5;
+}
+
+.market-chart__overlay--ma60 {
+  stroke: #2b8a3e;
+}
+
+.market-chart__overlay--boll {
+  stroke: #a0cfff;
+  stroke-dasharray: 3 3;
+}
+
+.market-chart__overlay--boll-mid {
+  stroke: #909399;
+  stroke-dasharray: 5 3;
+}
+
+.market-chart__band {
+  fill: rgba(64, 158, 255, 0.07);
+  stroke: none;
+}
+
+.market-chart__extremum {
+  stroke: #ffffff;
+  stroke-width: 1.5;
+}
+
+.market-chart__extremum--max {
+  fill: #f56c6c;
+}
+
+.market-chart__extremum--min {
+  fill: #67c23a;
+}
+
+.market-chart__extremum-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.market-chart__extremum-label--max {
+  fill: #f56c6c;
+}
+
+.market-chart__extremum-label--min {
+  fill: #67c23a;
 }
 
 .market-chart__svg {

@@ -6,12 +6,19 @@ from app.schemas import (
     FundArchiveListResponse,
     MarketAssetListResponse,
     MarketSeriesResponse,
+    NewsDetailResponse,
+    NewsListResponse,
+    NewsMetaResponse,
     RedemptionRuleSaveRequest,
+    SummaryDetailResponse,
+    SummaryListResponse,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["fund-archive"])
 
 market_router = APIRouter(prefix="/api/v1/market", tags=["market"])
+
+news_router = APIRouter(prefix="/api/v1", tags=["news"])
 
 
 def _fund_service(request: Request):
@@ -20,6 +27,10 @@ def _fund_service(request: Request):
 
 def _market_service(request: Request):
     return request.app.state.market_service
+
+
+def _news_service(request: Request):
+    return request.app.state.news_service
 
 
 @router.get("/fund-archives", response_model=FundArchiveListResponse)
@@ -55,3 +66,40 @@ def list_market_assets(request: Request) -> MarketAssetListResponse:
 @market_router.get("/series/{name}", response_model=MarketSeriesResponse)
 def get_market_series(request: Request, name: str) -> MarketSeriesResponse:
     return _market_service(request).get_series(name)
+
+
+@news_router.get("/news/meta", response_model=NewsMetaResponse)
+def get_news_meta(request: Request) -> NewsMetaResponse:
+    return _news_service(request).get_meta()
+
+
+@news_router.get("/news", response_model=NewsListResponse)
+def list_news(
+    request: Request,
+    q: str | None = Query(default=None, max_length=100),
+    start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> NewsListResponse:
+    return _news_service(request).list_news(q, start, end, page, page_size)
+
+
+@news_router.get("/news/{news_id}", response_model=NewsDetailResponse)
+def get_news(request: Request, news_id: str) -> NewsDetailResponse:
+    return _news_service(request).get_news(news_id)
+
+
+@news_router.get("/summaries", response_model=SummaryListResponse)
+def list_summaries(
+    request: Request,
+    q: str | None = Query(default=None, max_length=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> SummaryListResponse:
+    return _news_service(request).list_summaries(q, page, page_size)
+
+
+@news_router.get("/summaries/{name}", response_model=SummaryDetailResponse)
+def get_summary(request: Request, name: str) -> SummaryDetailResponse:
+    return _news_service(request).get_summary(name)

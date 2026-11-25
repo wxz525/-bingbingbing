@@ -25,16 +25,38 @@ class Settings(BaseSettings):
     etl_system_operator: str = "etl-system"
     cors_allow_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     market_data_dir: str = ""
+    data_dir: str = ""
+    news_index_dir: str = ""
 
     @property
     def cors_origins(self) -> list[str]:
         return [item.strip() for item in self.cors_allow_origins.split(",") if item.strip()]
 
     @property
+    def data_root_path(self) -> Path:
+        if self.data_dir.strip():
+            return Path(self.data_dir.strip()).expanduser()
+        return _PROJECT_DIR.parent / "data"
+
+    @property
     def market_data_path(self) -> Path:
         if self.market_data_dir.strip():
             return Path(self.market_data_dir.strip()).expanduser()
-        return _PROJECT_DIR.parent / "data" / "目标资产价格变量"
+        return self.data_root_path / "目标资产价格变量"
+
+    @property
+    def news_csv_path(self) -> Path:
+        return self.data_root_path / "新闻" / "无标题.csv"
+
+    @property
+    def summary_data_path(self) -> Path:
+        return self.data_root_path / "全球资金信息摘要"
+
+    @property
+    def news_index_path(self) -> Path:
+        if self.news_index_dir.strip():
+            return Path(self.news_index_dir.strip()).expanduser() / "news.db"
+        return Path.home() / ".cache" / "fund-archive" / "news.db"
 
     @field_validator("default_operator", "etl_system_operator")
     @classmethod

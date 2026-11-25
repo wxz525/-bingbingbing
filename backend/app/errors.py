@@ -58,6 +58,16 @@ class MarketAssetNotFound(ApiError):
         super().__init__(404, "MARKET_ASSET_NOT_FOUND", "行情标的或数据文件不存在")
 
 
+class NewsNotFound(ApiError):
+    def __init__(self) -> None:
+        super().__init__(404, "NEWS_NOT_FOUND", "新闻不存在或索引尚未构建完成")
+
+
+class SummaryNotFound(ApiError):
+    def __init__(self) -> None:
+        super().__init__(404, "SUMMARY_NOT_FOUND", "资金流摘要不存在")
+
+
 def error_content(code: str, message: str, field_errors: dict[str, str] | None = None) -> dict[str, Any]:
     return {
         "code": code,

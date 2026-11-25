@@ -211,7 +211,7 @@ if __name__ == "__main__":
     except Exception as e:  # 连接失败等运行时问题，给出可操作的提示
         log.error(f"校验中止：{type(e).__name__}: {e}")
         log.error(
-            "请确认中间件已启动（docker compose -f docker‑compose/docker-compose.yml "
-            "--env-file .env up -d），且项目根目录 .env 中的账号密码与实际一致。"
+            "请确认 MySQL / ClickHouse / MinIO 已启动，"
+            "且项目根目录 .env 中的地址与账号密码与实际一致。"
         )
         sys.exit(2)

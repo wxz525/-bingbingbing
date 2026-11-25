@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     mysql_database: str = "gy_meta"
     default_operator: str = "system"
     etl_system_operator: str = "etl-system"
+    cors_allow_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [item.strip() for item in self.cors_allow_origins.split(",") if item.strip()]
 
     @field_validator("default_operator", "etl_system_operator")
     @classmethod

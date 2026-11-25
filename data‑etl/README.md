@@ -6,8 +6,8 @@
 
 | 角色 | 机器 | 职责 |
 | --- | --- | --- |
-| 开发 | 任意（无需 Docker） | 编写 SQL / ETL 脚本 / 校验脚本 / 数据字典，本地做**静态校验**（`py_compile`、`import`），不执行真实入库 |
-| 部署执行 | 具备 Docker 的机器 | 拉取代码 → 配置 `.env` → `docker compose up -d` → 放置 `./data` → 运行 ETL → 运行校验 |
+| 开发 | 任意（无需中间件） | 编写 SQL / ETL 脚本 / 校验脚本 / 数据字典，本地做**静态校验**（`py_compile`、`import`），不执行真实入库 |
+| 部署执行 | 已具备 MySQL / ClickHouse / MinIO 的机器 | 拉取代码 → 配置 `.env` → 建库建表 → 放置 `./data` → 运行 ETL → 运行校验 |
 
 > 原始数据 `./data` **不提交仓库**，由执行方自行放置到项目根目录。
 
@@ -53,9 +53,10 @@ cp .env.example .env
 # 2. 放置原始数据（不提交仓库）
 #    确保项目根目录存在 ./data，内含 目标资产价格变量/、指标集1_数据.xlsx、新闻/ 等
 
-# 3. 启动中间件（首次启动自动执行 data-etl/sql 下的建库建表脚本）
-docker compose -f docker‑compose/docker-compose.yml --env-file .env up -d
-docker compose -f docker‑compose/docker-compose.yml ps    # 等待 mysql/clickhouse 变为 healthy
+# 3. 准备中间件并建库建表
+#    仓库不再提供 docker-compose，请自行部署 MySQL / ClickHouse / MinIO，并让 .env 指向对应地址
+mysql -h 127.0.0.1 -u root -p < data-etl/sql/01_mysql_ddl.sql
+clickhouse-client --multiquery < data-etl/sql/02_clickhouse_ddl.sql
 
 # 4. 执行 ETL（任意目录均可，脚本基于 __file__ 定位 ../data）
 python data-etl/scripts/run_all.py
@@ -76,7 +77,7 @@ python data-etl/test/verify_rowcount.py
 $env:MYSQL_PASSWORD="..."; $env:CLICKHOUSE_PASSWORD="..."; $env:MINIO_SECRET_KEY="..."
 ```
 
-端口约定（见 [docker-compose.yml](../docker‑compose/docker-compose.yml)）：
+端口约定（自行部署中间件时参考，需与 `.env` 保持一致）：
 
 | 服务 | 宿主机端口 | 说明 |
 | --- | --- | --- |
@@ -84,15 +85,14 @@ $env:MYSQL_PASSWORD="..."; $env:CLICKHOUSE_PASSWORD="..."; $env:MINIO_SECRET_KEY
 | ClickHouse | 8123 / 9000 | 9000 为 native 协议，`clickhouse-driver` 使用 |
 | MinIO | 9002 / 9003 | 9002 为 S3 API，9003 为控制台（避免与 ClickHouse 9000 冲突） |
 
-## 手动建表（不使用 docker compose 时）
+## 手动建表
 
 ```bash
 mysql -h 127.0.0.1 -u root -p < data-etl/sql/01_mysql_ddl.sql
 clickhouse-client --multiquery < data-etl/sql/02_clickhouse_ddl.sql
 ```
 
-> DDL 使用 `DROP TABLE IF EXISTS`，属于**重建式**初始化：重复执行会清空已有数据。
-> 容器自动初始化只在数据卷为空时触发一次；需重置时执行 `docker compose ... down -v` 再 `up -d`。
+> DDL 使用 `DROP TABLE IF EXISTS`，属于**重建式**初始化：重复执行会清空已有数据，需重置时重新执行上述脚本即可。
 
 ## 运行
 

@@ -5,7 +5,7 @@ import type {
   SummaryDetail,
   SummaryListResponse,
 } from '@/types/news'
-import { ApiRequestError, getApiBaseUrl } from '@/api/fundArchive'
+import { ApiRequestError, getApiBaseUrl } from '@/api/http'
 import { isAbortError } from '@/utils/format'
 
 export const NEWS_PATHS = {

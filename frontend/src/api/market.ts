@@ -1,5 +1,5 @@
 import type { MarketAssetListResponse, MarketSeries } from '@/types/market'
-import { ApiRequestError, getApiBaseUrl } from '@/api/fundArchive'
+import { ApiRequestError, getApiBaseUrl } from '@/api/http'
 import { isAbortError } from '@/utils/format'
 
 export const MARKET_PATHS = {

@@ -15,7 +15,7 @@ import type {
   SummaryDetail,
   SummaryListItem,
 } from '@/types/news'
-import { ApiRequestError } from '@/api/fundArchive'
+import { ApiRequestError } from '@/api/http'
 import { isAbortError } from '@/utils/format'
 import { renderMarkdown } from '@/utils/markdown'
 

@@ -4,7 +4,7 @@
 
 ## 目录说明
 - openspec：需求规格四件套（proposal / design / spec / tasks）
-- backend：FastAPI 后端服务（基金档案模块）
+- backend：FastAPI 后端服务（行情 / 资讯接口）
 - frontend：Vue3 + Vite 前端页面
 - data‑etl：竞赛数据集 ETL 入库脚本、建表 SQL 与数据字典（data‑etl/docs）
 

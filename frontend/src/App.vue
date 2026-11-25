@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import FundArchiveView from '@/views/FundArchiveView.vue'
 import MarketDashboardView from '@/views/MarketDashboardView.vue'
 import NewsCenterView from '@/views/NewsCenterView.vue'
 
@@ -12,15 +11,12 @@ const activeTab = ref('market')
   <div class="app-shell">
     <header class="app-shell__header">
       <h1 class="app-shell__title">基金数据平台</h1>
-      <span class="app-shell__subtitle">行情看板 · 基金档案 · 资讯中心</span>
+      <span class="app-shell__subtitle">行情看板 · 资讯中心</span>
     </header>
 
     <el-tabs v-model="activeTab" class="app-shell__tabs">
       <el-tab-pane label="行情看板" name="market">
         <MarketDashboardView />
-      </el-tab-pane>
-      <el-tab-pane label="基金档案" name="fund-archive">
-        <FundArchiveView />
       </el-tab-pane>
       <el-tab-pane label="资讯中心" name="news-center">
         <NewsCenterView />

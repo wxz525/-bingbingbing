@@ -9,19 +9,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
 
-CONTROLLED_FIELDS = {
-    "active_fund_code",
-    "created_at",
-    "created_by",
-    "deleted_at",
-    "deleted_by",
-    "etl_batch_id",
-    "is_deleted",
-    "rule_id",
-    "source_type",
-    "version_no",
-}
-
 
 class ApiError(Exception):
     def __init__(
@@ -36,21 +23,6 @@ class ApiError(Exception):
         self.code = code
         self.message = message
         self.field_errors = field_errors or {}
-
-
-class RequestValidationFailed(ApiError):
-    def __init__(self, field_errors: dict[str, str], message: str = "请求参数校验失败") -> None:
-        super().__init__(400, "VALIDATION_ERROR", message, field_errors)
-
-
-class FundNotFound(ApiError):
-    def __init__(self) -> None:
-        super().__init__(404, "FUND_NOT_FOUND", "基金不存在")
-
-
-class VersionConflict(ApiError):
-    def __init__(self) -> None:
-        super().__init__(409, "VERSION_CONFLICT", "申赎要素已更新，请刷新后重试")
 
 
 class MarketAssetNotFound(ApiError):
@@ -81,12 +53,9 @@ def _validation_fields(errors: list[dict[str, Any]]) -> dict[str, str]:
     for error in errors:
         location = error.get("loc", ())
         field = str(location[-1]) if location else "body"
-        if field in CONTROLLED_FIELDS and error.get("type") == "extra_forbidden":
-            message = "禁止传入由服务端控制的字段"
-        else:
-            message = str(error.get("msg", "参数不合法"))
-            if message.startswith("Value error, "):
-                message = message.removeprefix("Value error, ")
+        message = str(error.get("msg", "参数不合法"))
+        if message.startswith("Value error, "):
+            message = message.removeprefix("Value error, ")
         field_errors[field] = message
     return field_errors
 

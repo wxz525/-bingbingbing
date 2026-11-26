@@ -87,6 +87,8 @@ const selectedSummaryName = ref('')
 const summaryDetail = ref<SummaryDetail | null>(null)
 const summaryDetailLoading = ref(false)
 const summaryDetailError = ref('')
+const relatedNews = ref<NewsListItem[]>([])
+const relatedNewsLoading = ref(false)
 
 let newsController: AbortController | null = null
 let summaryController: AbortController | null = null
@@ -166,7 +168,7 @@ async function loadNews(): Promise<void> {
       keyword: newsKeyword.value.trim() || undefined,
       start: newsRange.value?.[0],
       end: newsRange.value?.[1],
-      topic: newsTopic.value || undefined,
+      topics: newsTopic.value ? [newsTopic.value] : undefined,
       level: newsLevel.value || undefined,
       sentiment: newsSentiment.value || undefined,
       page: newsPage.value,
@@ -298,6 +300,8 @@ function changeSummaryPage(page: number): void {
 async function selectSummary(item: SummaryListItem): Promise<void> {
   selectedSummaryName.value = item.name
   summaryController?.abort()
+  relatedNews.value = []
+  relatedNewsLoading.value = false
   const controller = new AbortController()
   summaryController = controller
   const requestId = ++summaryDetailRequestId
@@ -310,6 +314,7 @@ async function selectSummary(item: SummaryListItem): Promise<void> {
       return
     }
     summaryDetail.value = response
+    void loadRelatedNews(response)
   } catch (error) {
     if (isAbortError(error) || requestId !== summaryDetailRequestId) {
       return
@@ -319,6 +324,49 @@ async function selectSummary(item: SummaryListItem): Promise<void> {
     if (requestId === summaryDetailRequestId) {
       summaryDetailLoading.value = false
     }
+  }
+}
+
+async function loadRelatedNews(summary: SummaryDetail): Promise<void> {
+  if (!summary.topics.length && !summary.date) {
+    return
+  }
+  relatedNewsLoading.value = true
+  try {
+    let start: string | undefined
+    let end: string | undefined
+    if (summary.date) {
+      const d = new Date(summary.date)
+      const fmt = (dt: Date) => {
+        const y = dt.getFullYear()
+        const m = String(dt.getMonth() + 1).padStart(2, '0')
+        const day = String(dt.getDate()).padStart(2, '0')
+        return `${y}-${m}-${day}`
+      }
+      const before = new Date(d.getTime() - 7 * 86400000)
+      const after = new Date(d.getTime() + 7 * 86400000)
+      start = fmt(before)
+      end = fmt(after)
+    }
+    // 取前 3 个 topic，过滤掉 capital_flow（太泛）避免匹配过多噪音
+    const topicFiltered = summary.topics.filter((t) => t !== 'capital_flow').slice(0, 3)
+    if (!topicFiltered.length) {
+      return
+    }
+    const response = await listNews({
+      topics: topicFiltered,
+      start,
+      end,
+      pageSize: 10,
+    })
+    relatedNews.value = response.items
+  } catch (error) {
+    if (isAbortError(error)) {
+      return
+    }
+    relatedNews.value = []
+  } finally {
+    relatedNewsLoading.value = false
   }
 }
 
@@ -700,6 +748,38 @@ onBeforeUnmount(() => {
                 </el-tag>
               </div>
               <div class="news-detail__markdown" v-html="summaryHtml"></div>
+
+              <div class="related-news" v-loading="relatedNewsLoading">
+                <div class="related-news__title">相关新闻（{{ relatedNews.length }} 条）</div>
+                <el-empty
+                  v-if="!relatedNewsLoading && !relatedNews.length"
+                  description="近 7 天内未找到主题匹配的新闻"
+                  :image-size="60"
+                />
+                <ul v-else-if="relatedNews.length" class="related-news__list">
+                  <li
+                    v-for="item in relatedNews"
+                    :key="item.id"
+                    class="related-news__item"
+                    @click="activeSection = 'news'; newsKeyword = ''; newsTopic = ''; newsLevel = ''; newsSentiment = ''; newsPage = 1; newsRange = null; newsItems = []; loadNews(); void selectNews(item)"
+                  >
+                    <span class="related-news__meta">
+                      {{ item.date ?? '' }}
+                      <el-tag
+                        v-if="item.sentiment && SENTIMENT_TYPE[item.sentiment]"
+                        :type="SENTIMENT_TYPE[item.sentiment]"
+                        size="small"
+                        effect="light"
+                        round
+                        style="margin-left: 4px"
+                      >
+                        {{ SENTIMENT_OPTIONS.find((o) => o.value === item.sentiment)?.label ?? item.sentiment }}
+                      </el-tag>
+                    </span>
+                    <span class="related-news__title-text">{{ item.title }}</span>
+                  </li>
+                </ul>
+              </div>
             </template>
             <el-empty v-else description="选择左侧摘要查看内容" :image-size="100" />
           </section>
@@ -899,5 +979,52 @@ onBeforeUnmount(() => {
 
 .news-detail__markdown :deep(li) {
   margin: 4px 0;
+}
+
+.related-news {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px dashed #dcdfe6;
+}
+
+.related-news__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 12px;
+}
+
+.related-news__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.related-news__item {
+  cursor: pointer;
+  padding: 10px 12px;
+  border-radius: 6px;
+  transition: background-color 0.15s;
+}
+
+.related-news__item:hover {
+  background-color: #f5f7fa;
+}
+
+.related-news__meta {
+  display: block;
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 3px;
+}
+
+.related-news__title-text {
+  font-size: 13px;
+  color: #303133;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 </style>

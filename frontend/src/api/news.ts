@@ -62,7 +62,7 @@ export function listNews(
     keyword?: string
     start?: string
     end?: string
-    topic?: string
+    topics?: string[]
     level?: string
     sentiment?: string
     page?: number
@@ -80,8 +80,8 @@ export function listNews(
   if (params.end) {
     search.set('end', params.end)
   }
-  if (params.topic) {
-    search.set('topic', params.topic)
+  if (params.topics && params.topics.length) {
+    search.set('topics', params.topics.join(','))
   }
   if (params.level) {
     search.set('level', params.level)

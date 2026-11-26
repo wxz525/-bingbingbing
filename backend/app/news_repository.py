@@ -261,7 +261,7 @@ class NewsIndexRepository:
         keyword: str | None,
         start_date: str | None,
         end_date: str | None,
-        topic: str | None,
+        topics: list[str],
         level: str | None,
         sentiment: str | None,
         page: int,
@@ -281,9 +281,10 @@ class NewsIndexRepository:
         if end_date:
             conditions.append("trade_date <= ?")
             params.append(end_date)
-        if topic:
-            conditions.append("IFNULL(topics, '') LIKE ?")
-            params.append(f"%{topic}%")
+        if topics:
+            topic_terms = [f"IFNULL(topics, '') LIKE ?" for _ in topics]
+            conditions.append(f"({' OR '.join(topic_terms)})")
+            params.extend(f"%{t}%" for t in topics)
         if level:
             conditions.append("market_level = ?")
             params.append(level)

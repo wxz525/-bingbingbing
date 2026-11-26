@@ -33,6 +33,9 @@ class NewsListItem(BaseModel):
     title: str
     source: str | None = None
     stocks: list[str] = []
+    topics: list[str] = []
+    market_level: str | None = None
+    sentiment: str | None = None
 
 
 class NewsListResponse(BaseModel):
@@ -63,6 +66,9 @@ class SummaryListItem(BaseModel):
     date: date | None
     institution: str | None = None
     title: str
+    topics: list[str] = []
+    market_level: str | None = None
+    sentiment: str | None = None
 
 
 class SummaryListResponse(BaseModel):

@@ -62,6 +62,9 @@ export function listNews(
     keyword?: string
     start?: string
     end?: string
+    topic?: string
+    level?: string
+    sentiment?: string
     page?: number
     pageSize?: number
   } = {},
@@ -77,6 +80,15 @@ export function listNews(
   if (params.end) {
     search.set('end', params.end)
   }
+  if (params.topic) {
+    search.set('topic', params.topic)
+  }
+  if (params.level) {
+    search.set('level', params.level)
+  }
+  if (params.sentiment) {
+    search.set('sentiment', params.sentiment)
+  }
   search.set('page', String(params.page ?? 1))
   search.set('page_size', String(params.pageSize ?? 20))
   return requestJson<NewsListResponse>(`${NEWS_PATHS.list}?${search.toString()}`, signal)
@@ -87,12 +99,28 @@ export function getNews(newsId: string, signal?: AbortSignal): Promise<NewsDetai
 }
 
 export function listSummaries(
-  params: { keyword?: string; page?: number; pageSize?: number } = {},
+  params: {
+    keyword?: string
+    topic?: string
+    level?: string
+    sentiment?: string
+    page?: number
+    pageSize?: number
+  } = {},
   signal?: AbortSignal,
 ): Promise<SummaryListResponse> {
   const search = new URLSearchParams()
   if (params.keyword) {
     search.set('q', params.keyword)
+  }
+  if (params.topic) {
+    search.set('topic', params.topic)
+  }
+  if (params.level) {
+    search.set('level', params.level)
+  }
+  if (params.sentiment) {
+    search.set('sentiment', params.sentiment)
   }
   search.set('page', String(params.page ?? 1))
   search.set('page_size', String(params.pageSize ?? 20))

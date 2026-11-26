@@ -44,10 +44,13 @@ def list_news(
     q: str | None = Query(default=None, max_length=100),
     start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    topic: str | None = Query(default=None),
+    level: str | None = Query(default=None),
+    sentiment: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> NewsListResponse:
-    return _news_service(request).list_news(q, start, end, page, page_size)
+    return _news_service(request).list_news(q, start, end, topic, level, sentiment, page, page_size)
 
 
 @news_router.get("/news/{news_id}", response_model=NewsDetailResponse)
@@ -59,10 +62,13 @@ def get_news(request: Request, news_id: str) -> NewsDetailResponse:
 def list_summaries(
     request: Request,
     q: str | None = Query(default=None, max_length=100),
+    topic: str | None = Query(default=None),
+    level: str | None = Query(default=None),
+    sentiment: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> SummaryListResponse:
-    return _news_service(request).list_summaries(q, page, page_size)
+    return _news_service(request).list_summaries(q, topic, level, sentiment, page, page_size)
 
 
 @news_router.get("/summaries/{name}", response_model=SummaryDetailResponse)

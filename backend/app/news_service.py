@@ -30,6 +30,9 @@ def _news_item(payload: dict[str, Any]) -> NewsListItem:
         title=str(payload["title"]),
         source=payload.get("source"),
         stocks=[str(code) for code in payload.get("stocks", [])],
+        topics=list(payload.get("topics", [])),
+        market_level=payload.get("market_level"),
+        sentiment=payload.get("sentiment"),
     )
 
 
@@ -39,6 +42,9 @@ def _summary_item(payload: dict[str, Any]) -> SummaryListItem:
         date=_to_date(payload.get("date")),
         institution=payload.get("institution"),
         title=str(payload["title"]),
+        topics=list(payload.get("topics", [])),
+        market_level=payload.get("market_level"),
+        sentiment=payload.get("sentiment"),
     )
 
 
@@ -52,6 +58,9 @@ class NewsService:
         keyword: str | None,
         start_date: str | None,
         end_date: str | None,
+        topic: str | None,
+        level: str | None,
+        sentiment: str | None,
         page: int,
         page_size: int,
     ) -> NewsListResponse:
@@ -60,6 +69,9 @@ class NewsService:
             normalized or None,
             start_date or None,
             end_date or None,
+            topic or None,
+            level or None,
+            sentiment or None,
             page,
             page_size,
         )
@@ -95,11 +107,21 @@ class NewsService:
     def list_summaries(
         self,
         keyword: str | None,
+        topic: str | None,
+        level: str | None,
+        sentiment: str | None,
         page: int,
         page_size: int,
     ) -> SummaryListResponse:
         normalized = keyword.strip() if keyword else None
-        rows, total = self._summaries.list_summaries(normalized or None, page, page_size)
+        rows, total = self._summaries.list_summaries(
+            normalized or None,
+            topic or None,
+            level or None,
+            sentiment or None,
+            page,
+            page_size,
+        )
         return SummaryListResponse(
             items=[_summary_item(row) for row in rows],
             page=page,

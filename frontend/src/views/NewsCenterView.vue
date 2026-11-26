@@ -23,11 +23,47 @@ const NEWS_PAGE_SIZE = 20
 const SUMMARY_PAGE_SIZE = 20
 const POLL_INTERVAL = 5000
 
+const TOPIC_OPTIONS = [
+  { value: 'macro', label: '宏观政策' },
+  { value: 'tech', label: '科技/半导体' },
+  { value: 'pharma', label: '医药/医疗' },
+  { value: 'energy', label: '能源/资源' },
+  { value: 'finance', label: '金融/资本市场' },
+  { value: 'consumer', label: '消费/白酒' },
+  { value: 'infrastructure', label: '基建/周期' },
+  { value: 'event', label: '事件/地缘' },
+  { value: 'capital_flow', label: '资金面情报' },
+]
+const LEVEL_OPTIONS = [
+  { value: 'macro', label: '宏观市场' },
+  { value: 'sector', label: '细分市场/行业' },
+  { value: 'single', label: '个股/公司' },
+]
+const SENTIMENT_OPTIONS = [
+  { value: 'bullish', label: '利好' },
+  { value: 'neutral', label: '中性' },
+  { value: 'bearish', label: '利空' },
+]
+const TOPIC_LABEL: Record<string, string> = Object.fromEntries(
+  TOPIC_OPTIONS.map((o) => [o.value, o.label]),
+)
+const LEVEL_LABEL: Record<string, string> = Object.fromEntries(
+  LEVEL_OPTIONS.map((o) => [o.value, o.label]),
+)
+const SENTIMENT_TYPE: Record<string, 'success' | 'info' | 'danger'> = {
+  bullish: 'success',
+  neutral: 'info',
+  bearish: 'danger',
+}
+
 const activeSection = ref<'news' | 'summaries'>('news')
 
 const newsMeta = ref<NewsMeta | null>(null)
 const newsKeyword = ref('')
 const newsRange = ref<[string, string] | null>(null)
+const newsTopic = ref<string>('')
+const newsLevel = ref<string>('')
+const newsSentiment = ref<string>('')
 const newsItems = ref<NewsListItem[]>([])
 const newsTotal = ref(0)
 const newsPage = ref(1)
@@ -39,6 +75,9 @@ const newsDetailLoading = ref(false)
 const newsDetailError = ref('')
 
 const summaryKeyword = ref('')
+const summaryTopic = ref<string>('')
+const summaryLevel = ref<string>('')
+const summarySentiment = ref<string>('')
 const summaryItems = ref<SummaryListItem[]>([])
 const summaryTotal = ref(0)
 const summaryPage = ref(1)
@@ -127,6 +166,9 @@ async function loadNews(): Promise<void> {
       keyword: newsKeyword.value.trim() || undefined,
       start: newsRange.value?.[0],
       end: newsRange.value?.[1],
+      topic: newsTopic.value || undefined,
+      level: newsLevel.value || undefined,
+      sentiment: newsSentiment.value || undefined,
       page: newsPage.value,
       pageSize: NEWS_PAGE_SIZE,
     })
@@ -161,6 +203,9 @@ function searchNews(): void {
 function resetNews(): void {
   newsKeyword.value = ''
   newsRange.value = null
+  newsTopic.value = ''
+  newsLevel.value = ''
+  newsSentiment.value = ''
   searchNews()
 }
 
@@ -203,6 +248,9 @@ async function loadSummaries(): Promise<void> {
   try {
     const response = await listSummaries({
       keyword: summaryKeyword.value.trim() || undefined,
+      topic: summaryTopic.value || undefined,
+      level: summaryLevel.value || undefined,
+      sentiment: summarySentiment.value || undefined,
       page: summaryPage.value,
       pageSize: SUMMARY_PAGE_SIZE,
     })
@@ -236,6 +284,9 @@ function searchSummaries(): void {
 
 function resetSummaries(): void {
   summaryKeyword.value = ''
+  summaryTopic.value = ''
+  summaryLevel.value = ''
+  summarySentiment.value = ''
   searchSummaries()
 }
 
@@ -304,6 +355,48 @@ onBeforeUnmount(() => {
             end-placeholder="结束日期"
             class="news-toolbar__range"
           />
+          <el-select
+            v-model="newsTopic"
+            placeholder="全部主题"
+            clearable
+            class="news-toolbar__filter"
+            @change="searchNews"
+          >
+            <el-option
+              v-for="opt in TOPIC_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
+          </el-select>
+          <el-select
+            v-model="newsLevel"
+            placeholder="全部层级"
+            clearable
+            class="news-toolbar__filter"
+            @change="searchNews"
+          >
+            <el-option
+              v-for="opt in LEVEL_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
+          </el-select>
+          <el-select
+            v-model="newsSentiment"
+            placeholder="全部情绪"
+            clearable
+            class="news-toolbar__filter"
+            @change="searchNews"
+          >
+            <el-option
+              v-for="opt in SENTIMENT_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
+          </el-select>
           <el-button type="primary" @click="searchNews">查询</el-button>
           <el-button @click="resetNews">重置</el-button>
           <span v-if="metaSummary && !isIndexing" class="news-toolbar__stats">{{ metaSummary }}</span>
@@ -360,6 +453,26 @@ onBeforeUnmount(() => {
                   {{ item.stocks.length }} 只个股
                 </span>
               </span>
+              <span v-if="item.sentiment || item.topics.length" class="news-item__tags">
+                <el-tag
+                  v-if="item.sentiment && SENTIMENT_TYPE[item.sentiment]"
+                  :type="SENTIMENT_TYPE[item.sentiment]"
+                  size="small"
+                  effect="light"
+                  round
+                >
+                  {{ SENTIMENT_OPTIONS.find((o) => o.value === item.sentiment)?.label ?? item.sentiment }}
+                </el-tag>
+                <el-tag
+                  v-for="topic in item.topics"
+                  :key="topic"
+                  size="small"
+                  effect="plain"
+                  round
+                >
+                  {{ TOPIC_LABEL[topic] ?? topic }}
+                </el-tag>
+              </span>
             </button>
 
             <el-empty
@@ -393,6 +506,25 @@ onBeforeUnmount(() => {
               <div class="news-detail__meta">
                 <span>{{ newsDetail.date ?? '日期未知' }}</span>
                 <span v-if="newsDetail.source">来源：{{ newsDetail.source }}</span>
+                <span v-if="newsDetail.market_level">层级：{{ LEVEL_LABEL[newsDetail.market_level] ?? newsDetail.market_level }}</span>
+              </div>
+              <div v-if="newsDetail.sentiment || newsDetail.topics.length" class="news-detail__tags">
+                <el-tag
+                  v-if="newsDetail.sentiment && SENTIMENT_TYPE[newsDetail.sentiment]"
+                  :type="SENTIMENT_TYPE[newsDetail.sentiment]"
+                  effect="light"
+                  round
+                >
+                  {{ SENTIMENT_OPTIONS.find((o) => o.value === newsDetail!.sentiment)?.label ?? newsDetail!.sentiment }}
+                </el-tag>
+                <el-tag
+                  v-for="topic in newsDetail.topics"
+                  :key="topic"
+                  effect="plain"
+                  round
+                >
+                  {{ TOPIC_LABEL[topic] ?? topic }}
+                </el-tag>
               </div>
               <div v-if="newsDetail.stocks.length" class="news-detail__stocks">
                 <el-tag
@@ -421,6 +553,48 @@ onBeforeUnmount(() => {
             clearable
             @keyup.enter="searchSummaries"
           />
+          <el-select
+            v-model="summaryTopic"
+            placeholder="全部主题"
+            clearable
+            class="news-toolbar__filter"
+            @change="searchSummaries"
+          >
+            <el-option
+              v-for="opt in TOPIC_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
+          </el-select>
+          <el-select
+            v-model="summaryLevel"
+            placeholder="全部层级"
+            clearable
+            class="news-toolbar__filter"
+            @change="searchSummaries"
+          >
+            <el-option
+              v-for="opt in LEVEL_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
+          </el-select>
+          <el-select
+            v-model="summarySentiment"
+            placeholder="全部情绪"
+            clearable
+            class="news-toolbar__filter"
+            @change="searchSummaries"
+          >
+            <el-option
+              v-for="opt in SENTIMENT_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
+          </el-select>
           <el-button type="primary" @click="searchSummaries">查询</el-button>
           <el-button @click="resetSummaries">重置</el-button>
           <span class="news-toolbar__stats">共 {{ summaryTotal }} 篇摘要</span>
@@ -449,6 +623,26 @@ onBeforeUnmount(() => {
               <span class="news-item__meta">
                 <span>{{ item.date ?? '日期未知' }}</span>
                 <span v-if="item.institution">{{ item.institution }}</span>
+              </span>
+              <span v-if="item.sentiment || item.topics.length" class="news-item__tags">
+                <el-tag
+                  v-if="item.sentiment && SENTIMENT_TYPE[item.sentiment]"
+                  :type="SENTIMENT_TYPE[item.sentiment]"
+                  size="small"
+                  effect="light"
+                  round
+                >
+                  {{ SENTIMENT_OPTIONS.find((o) => o.value === item.sentiment)?.label ?? item.sentiment }}
+                </el-tag>
+                <el-tag
+                  v-for="topic in item.topics"
+                  :key="topic"
+                  size="small"
+                  effect="plain"
+                  round
+                >
+                  {{ TOPIC_LABEL[topic] ?? topic }}
+                </el-tag>
               </span>
             </button>
 
@@ -485,6 +679,25 @@ onBeforeUnmount(() => {
                 <span v-if="summaryDetail.institution">
                   机构：{{ summaryDetail.institution }}
                 </span>
+                <span v-if="summaryDetail.market_level">层级：{{ LEVEL_LABEL[summaryDetail.market_level] ?? summaryDetail.market_level }}</span>
+              </div>
+              <div v-if="summaryDetail.sentiment || summaryDetail.topics.length" class="news-detail__tags">
+                <el-tag
+                  v-if="summaryDetail.sentiment && SENTIMENT_TYPE[summaryDetail.sentiment]"
+                  :type="SENTIMENT_TYPE[summaryDetail.sentiment]"
+                  effect="light"
+                  round
+                >
+                  {{ SENTIMENT_OPTIONS.find((o) => o.value === summaryDetail!.sentiment)?.label ?? summaryDetail!.sentiment }}
+                </el-tag>
+                <el-tag
+                  v-for="topic in summaryDetail.topics"
+                  :key="topic"
+                  effect="plain"
+                  round
+                >
+                  {{ TOPIC_LABEL[topic] ?? topic }}
+                </el-tag>
               </div>
               <div class="news-detail__markdown" v-html="summaryHtml"></div>
             </template>
@@ -529,6 +742,10 @@ onBeforeUnmount(() => {
 .news-toolbar__stats {
   font-size: 12px;
   color: #909399;
+}
+
+.news-toolbar__filter {
+  width: 130px;
 }
 
 .news-body {
@@ -596,6 +813,12 @@ onBeforeUnmount(() => {
   color: #b1b3b8;
 }
 
+.news-item__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .news-list__pagination {
   justify-content: center;
   margin-top: 8px;
@@ -633,6 +856,13 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 16px;
+}
+
+.news-detail__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
 .news-detail__content {

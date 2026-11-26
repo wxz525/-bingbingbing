@@ -4,6 +4,9 @@ export interface NewsListItem {
   title: string
   source: string | null
   stocks: string[]
+  topics: string[]
+  market_level: string | null
+  sentiment: string | null
 }
 
 export interface NewsListResponse {
@@ -34,6 +37,9 @@ export interface SummaryListItem {
   date: string | null
   institution: string | null
   title: string
+  topics: string[]
+  market_level: string | null
+  sentiment: string | null
 }
 
 export interface SummaryListResponse {

@@ -11,6 +11,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from app.news_tagger import tag_row
+
 logger = logging.getLogger(__name__)
 
 _BEIJING_TZ = timezone(timedelta(hours=8))
@@ -27,7 +29,10 @@ CREATE TABLE IF NOT EXISTS news (
     title TEXT NOT NULL,
     source TEXT,
     stocks TEXT,
-    content BLOB
+    content BLOB,
+    topics TEXT,
+    market_level TEXT,
+    sentiment TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_news_date ON news(trade_date);
 CREATE TABLE IF NOT EXISTS meta (
@@ -160,7 +165,7 @@ class NewsIndexRepository:
                 connection.executescript(_NEWS_SCHEMA)
                 connection.execute("PRAGMA journal_mode=OFF")
                 connection.execute("PRAGMA synchronous=OFF")
-                batch: list[tuple[str, str, str, str, str, bytes | None]] = []
+                batch: list[tuple[str, str, str, str, str, bytes | None, str, str, str]] = []
                 with self._csv_path.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
                     for row in csv.reader(handle):
                         if len(row) < 10:
@@ -171,6 +176,9 @@ class NewsIndexRepository:
                         if not news_id or not trade_date:
                             continue
                         content_text = _strip_html(row[2])[:_MAX_CONTENT_LENGTH]
+                        topics, market_level, sentiment = tag_row(
+                            title or "", row[3].strip(), content_text
+                        )
                         batch.append(
                             (
                                 news_id,
@@ -179,13 +187,17 @@ class NewsIndexRepository:
                                 row[3].strip(),
                                 json.dumps(_parse_stocks(row[6]), ensure_ascii=False),
                                 zlib.compress(content_text.encode("utf-8"), 6) if content_text else None,
+                                topics,
+                                market_level,
+                                sentiment,
                             )
                         )
                         if len(batch) >= 2000:
                             connection.executemany(
                                 "INSERT OR IGNORE INTO news "
-                                "(news_id, trade_date, title, source, stocks, content) "
-                                "VALUES (?, ?, ?, ?, ?, ?)",
+                                "(news_id, trade_date, title, source, stocks, content, "
+                                "topics, market_level, sentiment) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 batch,
                             )
                             processed += len(batch)
@@ -195,8 +207,9 @@ class NewsIndexRepository:
                 if batch:
                     connection.executemany(
                         "INSERT OR IGNORE INTO news "
-                        "(news_id, trade_date, title, source, stocks, content) "
-                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        "(news_id, trade_date, title, source, stocks, content, "
+                        "topics, market_level, sentiment) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         batch,
                     )
                     processed += len(batch)
@@ -248,6 +261,9 @@ class NewsIndexRepository:
         keyword: str | None,
         start_date: str | None,
         end_date: str | None,
+        topic: str | None,
+        level: str | None,
+        sentiment: str | None,
         page: int,
         page_size: int,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -265,6 +281,15 @@ class NewsIndexRepository:
         if end_date:
             conditions.append("trade_date <= ?")
             params.append(end_date)
+        if topic:
+            conditions.append("IFNULL(topics, '') LIKE ?")
+            params.append(f"%{topic}%")
+        if level:
+            conditions.append("market_level = ?")
+            params.append(level)
+        if sentiment:
+            conditions.append("sentiment = ?")
+            params.append(sentiment)
         where_sql = f" WHERE {' AND '.join(conditions)}" if conditions else ""
 
         with self._connect() as connection:
@@ -272,8 +297,8 @@ class NewsIndexRepository:
                 f"SELECT COUNT(*) FROM news{where_sql}", params
             ).fetchone()[0]
             rows = connection.execute(
-                "SELECT news_id, trade_date, title, source, stocks FROM news"
-                f"{where_sql} ORDER BY trade_date DESC, rowid DESC LIMIT ? OFFSET ?",
+                "SELECT news_id, trade_date, title, source, stocks, topics, market_level, sentiment "
+                f"FROM news{where_sql} ORDER BY trade_date DESC, rowid DESC LIMIT ? OFFSET ?",
                 [*params, page_size, (page - 1) * page_size],
             ).fetchall()
 
@@ -284,6 +309,9 @@ class NewsIndexRepository:
                 "title": row[2],
                 "source": row[3] or None,
                 "stocks": json.loads(row[4] or "[]"),
+                "topics": [t for t in (row[5] or "").split(",") if t],
+                "market_level": row[6] or None,
+                "sentiment": row[7] or None,
             }
             for row in rows
         ]
@@ -294,7 +322,8 @@ class NewsIndexRepository:
             return None
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT news_id, trade_date, title, source, stocks, content FROM news "
+                "SELECT news_id, trade_date, title, source, stocks, content, "
+                "topics, market_level, sentiment FROM news "
                 "WHERE news_id = ?",
                 (news_id,),
             ).fetchone()
@@ -313,6 +342,9 @@ class NewsIndexRepository:
             "source": row[3] or None,
             "stocks": json.loads(row[4] or "[]"),
             "content": content,
+            "topics": [t for t in (row[6] or "").split(",") if t],
+            "market_level": row[7] or None,
+            "sentiment": row[8] or None,
         }
 
     def meta(self) -> dict[str, Any]:
@@ -345,12 +377,21 @@ class NewsIndexRepository:
 
 
 class SummaryRepository:
-    """读取本地 Markdown 资金流摘要，列表索引带目录签名缓存。"""
+    """读取本地 Markdown 资金流摘要，列表索引带目录签名缓存，标签从 summaries_tags.json 加载。"""
 
     def __init__(self, directory: Path) -> None:
         self._directory = Path(directory)
         self._items: list[dict[str, Any]] | None = None
-        self._signature: tuple[int, int] | None = None
+        self._signature: tuple[int, int, int] | None = None
+
+    def _load_tags(self) -> dict[str, dict[str, Any]]:
+        tag_file = self._directory / "summaries_tags.json"
+        if not tag_file.exists():
+            return {}
+        try:
+            return json.loads(tag_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
 
     def _load(self) -> list[dict[str, Any]]:
         if not self._directory.exists():
@@ -361,10 +402,19 @@ class SummaryRepository:
             stat = self._directory.stat()
         except OSError:
             return self._items or []
-        signature = (stat.st_mtime_ns, len(list(self._directory.glob("*.md"))))
+        md_count = len(list(self._directory.glob("*.md")))
+        tag_mtime = 0
+        tag_file = self._directory / "summaries_tags.json"
+        if tag_file.exists():
+            try:
+                tag_mtime = tag_file.stat().st_mtime_ns
+            except OSError:
+                pass
+        signature = (stat.st_mtime_ns, md_count, tag_mtime)
         if self._items is not None and signature == self._signature:
             return self._items
 
+        tags = self._load_tags()
         items: list[dict[str, Any]] = []
         for path in self._directory.glob("*.md"):
             match = _SUMMARY_NAME_PATTERN.match(path.stem)
@@ -377,12 +427,16 @@ class SummaryRepository:
                 institution, title = parts[0], parts[1]
             else:
                 institution, title = None, rest
+            tag = tags.get(path.name, {})
             items.append(
                 {
                     "name": path.name,
                     "date": date_text,
                     "institution": institution,
                     "title": title,
+                    "topics": list(tag.get("topics", [])),
+                    "market_level": tag.get("market_level"),
+                    "sentiment": tag.get("sentiment"),
                 }
             )
         items.sort(key=lambda item: (item["date"] or "", item["name"]), reverse=True)
@@ -393,6 +447,9 @@ class SummaryRepository:
     def list_summaries(
         self,
         keyword: str | None,
+        topic: str | None,
+        level: str | None,
+        sentiment: str | None,
         page: int,
         page_size: int,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -405,6 +462,12 @@ class SummaryRepository:
                 if text in item["title"].lower()
                 or text in (item["institution"] or "").lower()
             ]
+        if topic:
+            items = [item for item in items if topic in item.get("topics", [])]
+        if level:
+            items = [item for item in items if item.get("market_level") == level]
+        if sentiment:
+            items = [item for item in items if item.get("sentiment") == sentiment]
         total = len(items)
         start = (page - 1) * page_size
         return items[start : start + page_size], total

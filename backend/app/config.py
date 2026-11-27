@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     market_data_dir: str = ""
     data_dir: str = ""
     news_index_dir: str = ""
+    ark_api_key: str = ""
+    ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    ark_model: str = ""
+    ark_timeout: float = 30.0
+
+    @property
+    def ark_enabled(self) -> bool:
+        return bool(self.ark_api_key.strip() and self.ark_model.strip())
 
     @property
     def cors_origins(self) -> list[str]:

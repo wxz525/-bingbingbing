@@ -2,6 +2,8 @@ import type {
   NewsDetail,
   NewsListResponse,
   NewsMeta,
+  SentimentOverviewResponse,
+  SentimentSeriesResponse,
   SummaryDetail,
   SummaryListResponse,
 } from '@/types/news'
@@ -14,6 +16,8 @@ export const NEWS_PATHS = {
   detail: (newsId: string) => `/api/v1/news/${encodeURIComponent(newsId)}`,
   summaries: '/api/v1/summaries',
   summaryDetail: (name: string) => `/api/v1/summaries/${encodeURIComponent(name)}`,
+  sentimentOverview: '/api/v1/sentiment/overview',
+  sentimentSeries: '/api/v1/sentiment/series',
 }
 
 async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -129,4 +133,24 @@ export function listSummaries(
 
 export function getSummary(name: string, signal?: AbortSignal): Promise<SummaryDetail> {
   return requestJson<SummaryDetail>(NEWS_PATHS.summaryDetail(name), signal)
+}
+
+export function getSentimentOverview(signal?: AbortSignal): Promise<SentimentOverviewResponse> {
+  return requestJson<SentimentOverviewResponse>(NEWS_PATHS.sentimentOverview, signal)
+}
+
+export function getSentimentSeries(
+  params: { topic: string; start?: string; end?: string; bucket?: string },
+  signal?: AbortSignal,
+): Promise<SentimentSeriesResponse> {
+  const search = new URLSearchParams()
+  search.set('topic', params.topic)
+  if (params.start) {
+    search.set('start', params.start)
+  }
+  if (params.end) {
+    search.set('end', params.end)
+  }
+  search.set('bucket', params.bucket ?? 'week')
+  return requestJson<SentimentSeriesResponse>(`${NEWS_PATHS.sentimentSeries}?${search.toString()}`, signal)
 }

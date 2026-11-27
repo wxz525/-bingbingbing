@@ -8,6 +8,11 @@ from app.schemas import (
     NewsListItem,
     NewsListResponse,
     NewsMetaResponse,
+    SentimentOverviewResponse,
+    SentimentPoint,
+    SentimentSeriesResponse,
+    SentimentSummaryPoint,
+    SentimentTopicOverview,
     SummaryDetailResponse,
     SummaryListItem,
     SummaryListResponse,
@@ -135,3 +140,78 @@ class NewsService:
             raise SummaryNotFound()
         item = _summary_item(row)
         return SummaryDetailResponse(**item.model_dump(), content=str(row["content"]))
+
+    def sentiment_overview(self) -> SentimentOverviewResponse:
+        """全量主题情绪概览：新闻（SQLite 聚合）+ 资金流摘要（标签过滤）。"""
+        news_rows = self._news.sentiment_topic_overview()
+        summary_stats: dict[str, dict[str, int]] = {}
+        for item in self._summaries.items_matching(None, None, None):
+            sentiment = item.get("sentiment")
+            if sentiment not in ("bullish", "bearish", "neutral"):
+                sentiment = "neutral"
+            for key in set(item.get("topics", [])):
+                stats = summary_stats.setdefault(
+                    key, {"total": 0, "bullish": 0, "bearish": 0, "neutral": 0}
+                )
+                stats["total"] += 1
+                stats[sentiment] += 1
+
+        topics = []
+        for row in news_rows:
+            key = row["topic"]
+            summary = summary_stats.get(
+                key, {"total": 0, "bullish": 0, "bearish": 0, "neutral": 0}
+            )
+            topics.append(
+                SentimentTopicOverview(
+                    topic=key,
+                    news_total=int(row["total"]),
+                    news_bullish=int(row["bullish"]),
+                    news_bearish=int(row["bearish"]),
+                    news_neutral=int(row["neutral"]),
+                    summary_total=summary["total"],
+                    summary_bullish=summary["bullish"],
+                    summary_bearish=summary["bearish"],
+                    summary_neutral=summary["neutral"],
+                )
+            )
+        return SentimentOverviewResponse(topics=topics)
+
+    def sentiment_series(
+        self,
+        topic: str,
+        start_date: str | None,
+        end_date: str | None,
+        bucket: str,
+    ) -> SentimentSeriesResponse:
+        """主题情绪走势：按日/周聚合新闻情绪，并叠加该主题的资金流摘要观点。"""
+        normalized = topic.strip()
+        rows = self._news.sentiment_series(normalized, start_date, end_date, bucket)
+        points = []
+        for row in rows:
+            bullish, bearish = int(row["bullish"]), int(row["bearish"])
+            directional = bullish + bearish
+            score = (bullish - bearish) / directional if directional else 0.0
+            points.append(
+                SentimentPoint(
+                    date=str(row["date"]),
+                    bullish=bullish,
+                    bearish=bearish,
+                    neutral=int(row["neutral"]),
+                    total=int(row["total"]),
+                    score=round(score, 4),
+                )
+            )
+        summaries = [
+            SentimentSummaryPoint(
+                name=str(item["name"]),
+                date=_to_date(item.get("date")),
+                institution=item.get("institution"),
+                title=str(item["title"]),
+                sentiment=item.get("sentiment"),
+            )
+            for item in self._summaries.items_matching(normalized, start_date, end_date)
+        ]
+        return SentimentSeriesResponse(
+            topic=normalized, bucket=bucket, points=points, summaries=summaries
+        )

@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from app.news_tagger import tag_row
+from app.news_tagger import TOPIC_KEYWORDS, tag_row
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,7 @@ class NewsIndexRepository:
         self._status = "idle"
         self._indexed_rows = 0
         self._error: str | None = None
+        self._sentiment_overview_cache: tuple[int, list[dict[str, Any]]] | None = None
 
         meta = self._read_meta()
         if meta and meta.get("source_mtime") == self._source_mtime_text():
@@ -376,6 +377,106 @@ class NewsIndexRepository:
         )
         return meta
 
+    def sentiment_topic_overview(self) -> list[dict[str, Any]]:
+        """按主题统计新闻情绪分布（全量单次扫描），按行数签名缓存。"""
+        if not self._db_path.exists():
+            return []
+        with self._connect() as connection:
+            total = int(connection.execute("SELECT COUNT(*) FROM news").fetchone()[0])
+            if total == 0:
+                return []
+            if self._sentiment_overview_cache and self._sentiment_overview_cache[0] == total:
+                return self._sentiment_overview_cache[1]
+
+            columns = ["COUNT(*) AS c_total"]
+            for key in TOPIC_KEYWORDS:
+                for label in ("", "bullish", "bearish"):
+                    # 空 label 表示该主题下的全部新闻
+                    if label:
+                        columns.append(
+                            f"SUM(CASE WHEN sentiment = '{label}' AND IFNULL(topics, '') LIKE '%{key}%' "
+                            f"THEN 1 ELSE 0 END) AS c_{key}_{label}"
+                        )
+                    else:
+                        columns.append(
+                            f"SUM(CASE WHEN IFNULL(topics, '') LIKE '%{key}%' "
+                            f"THEN 1 ELSE 0 END) AS c_{key}_all"
+                        )
+            sql = f"SELECT {', '.join(columns)} FROM news"
+            cursor = connection.execute(sql)
+            names = [description[0] for description in cursor.description]
+            row = cursor.fetchone()
+            values = dict(zip(names, (int(v or 0) for v in row)))
+
+        overview = []
+        for key in TOPIC_KEYWORDS:
+            topic_total = int(values.get(f"c_{key}_all", 0))
+            bullish = int(values.get(f"c_{key}_bullish", 0))
+            bearish = int(values.get(f"c_{key}_bearish", 0))
+            overview.append(
+                {
+                    "topic": key,
+                    "total": topic_total,
+                    "bullish": bullish,
+                    "bearish": bearish,
+                    "neutral": max(0, topic_total - bullish - bearish),
+                }
+            )
+        self._sentiment_overview_cache = (total, overview)
+        return overview
+
+    def sentiment_series(
+        self,
+        topic: str,
+        start_date: str | None,
+        end_date: str | None,
+        bucket: str,
+    ) -> list[dict[str, Any]]:
+        """按日期/周聚合指定主题的情绪计数。"""
+        if not self._db_path.exists():
+            return []
+        conditions = ["IFNULL(topics, '') LIKE ?"]
+        params: list[Any] = [f"%{topic}%"]
+        if start_date:
+            conditions.append("trade_date >= ?")
+            params.append(start_date)
+        if end_date:
+            conditions.append("trade_date <= ?")
+            params.append(end_date)
+        where_sql = f" WHERE {' AND '.join(conditions)}"
+
+        if bucket == "week":
+            group_expr = "strftime('%Y-%W', trade_date)"
+            select_date = "MIN(trade_date)"
+        else:
+            group_expr = "trade_date"
+            select_date = "trade_date"
+
+        sql = (
+            f"SELECT {select_date} AS bucket_date, "
+            "SUM(CASE WHEN sentiment = 'bullish' THEN 1 ELSE 0 END) AS bullish, "
+            "SUM(CASE WHEN sentiment = 'bearish' THEN 1 ELSE 0 END) AS bearish, "
+            "COUNT(*) AS total "
+            f"FROM news{where_sql} GROUP BY {group_expr} ORDER BY bucket_date"
+        )
+        with self._connect() as connection:
+            rows = connection.execute(sql, params).fetchall()
+
+        points = []
+        for row in rows:
+            bucket_date, bullish, bearish, total = row
+            bullish, bearish, total = int(bullish or 0), int(bearish or 0), int(total or 0)
+            points.append(
+                {
+                    "date": bucket_date,
+                    "bullish": bullish,
+                    "bearish": bearish,
+                    "neutral": max(0, total - bullish - bearish),
+                    "total": total,
+                }
+            )
+        return points
+
 
 class SummaryRepository:
     """读取本地 Markdown 资金流摘要，列表索引带目录签名缓存，标签从 summaries_tags.json 加载。"""
@@ -472,6 +573,25 @@ class SummaryRepository:
         total = len(items)
         start = (page - 1) * page_size
         return items[start : start + page_size], total
+
+    def items_matching(
+        self,
+        topic: str | None,
+        start_date: str | None,
+        end_date: str | None,
+    ) -> list[dict[str, Any]]:
+        """按主题与日期范围过滤摘要条目（供情绪指数等聚合使用）。"""
+        result = []
+        for item in self._load():
+            if topic and topic not in item.get("topics", []):
+                continue
+            date = item.get("date") or ""
+            if start_date and date < start_date:
+                continue
+            if end_date and date > end_date:
+                continue
+            result.append(item)
+        return result
 
     def get_summary(self, name: str) -> dict[str, Any] | None:
         item = next((entry for entry in self._load() if entry["name"] == name), None)

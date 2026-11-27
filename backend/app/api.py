@@ -6,6 +6,8 @@ from app.schemas import (
     NewsDetailResponse,
     NewsListResponse,
     NewsMetaResponse,
+    SentimentOverviewResponse,
+    SentimentSeriesResponse,
     SummaryDetailResponse,
     SummaryListResponse,
 )
@@ -75,3 +77,19 @@ def list_summaries(
 @news_router.get("/summaries/{name}", response_model=SummaryDetailResponse)
 def get_summary(request: Request, name: str) -> SummaryDetailResponse:
     return _news_service(request).get_summary(name)
+
+
+@news_router.get("/sentiment/overview", response_model=SentimentOverviewResponse)
+def sentiment_overview(request: Request) -> SentimentOverviewResponse:
+    return _news_service(request).sentiment_overview()
+
+
+@news_router.get("/sentiment/series", response_model=SentimentSeriesResponse)
+def sentiment_series(
+    request: Request,
+    topic: str = Query(..., min_length=1, max_length=40),
+    start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    bucket: str = Query(default="week", pattern="^(day|week)$"),
+) -> SentimentSeriesResponse:
+    return _news_service(request).sentiment_series(topic, start, end, bucket)

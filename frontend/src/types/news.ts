@@ -52,3 +52,43 @@ export interface SummaryListResponse {
 export interface SummaryDetail extends SummaryListItem {
   content: string
 }
+
+export interface SentimentTopicOverview {
+  topic: string
+  news_total: number
+  news_bullish: number
+  news_bearish: number
+  news_neutral: number
+  summary_total: number
+  summary_bullish: number
+  summary_bearish: number
+  summary_neutral: number
+}
+
+export interface SentimentOverviewResponse {
+  topics: SentimentTopicOverview[]
+}
+
+export interface SentimentPoint {
+  date: string
+  bullish: number
+  bearish: number
+  neutral: number
+  total: number
+  score: number
+}
+
+export interface SentimentSummaryPoint {
+  name: string
+  date: string | null
+  institution: string | null
+  title: string
+  sentiment: string | null
+}
+
+export interface SentimentSeriesResponse {
+  topic: string
+  bucket: string
+  points: SentimentPoint[]
+  summaries: SentimentSummaryPoint[]
+}

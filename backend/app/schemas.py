@@ -80,3 +80,43 @@ class SummaryListResponse(BaseModel):
 
 class SummaryDetailResponse(SummaryListItem):
     content: str
+
+
+class SentimentTopicOverview(BaseModel):
+    topic: str
+    news_total: int
+    news_bullish: int
+    news_bearish: int
+    news_neutral: int
+    summary_total: int
+    summary_bullish: int
+    summary_bearish: int
+    summary_neutral: int
+
+
+class SentimentOverviewResponse(BaseModel):
+    topics: list[SentimentTopicOverview]
+
+
+class SentimentPoint(BaseModel):
+    date: str
+    bullish: int
+    bearish: int
+    neutral: int
+    total: int
+    score: float
+
+
+class SentimentSummaryPoint(BaseModel):
+    name: str
+    date: date | None
+    institution: str | None = None
+    title: str
+    sentiment: str | None = None
+
+
+class SentimentSeriesResponse(BaseModel):
+    topic: str
+    bucket: str
+    points: list[SentimentPoint]
+    summaries: list[SentimentSummaryPoint]

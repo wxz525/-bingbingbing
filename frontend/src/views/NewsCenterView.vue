@@ -4,6 +4,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   getNews,
   getNewsMeta,
+  getSentimentOverview,
+  getSentimentSeries,
   getSummary,
   listNews,
   listSummaries,
@@ -12,12 +14,15 @@ import type {
   NewsDetail,
   NewsListItem,
   NewsMeta,
+  SentimentOverviewResponse,
+  SentimentSeriesResponse,
   SummaryDetail,
   SummaryListItem,
 } from '@/types/news'
 import { ApiRequestError } from '@/api/http'
 import { isAbortError } from '@/utils/format'
 import { renderMarkdown } from '@/utils/markdown'
+import SentimentChart from '@/components/SentimentChart.vue'
 
 const NEWS_PAGE_SIZE = 20
 const SUMMARY_PAGE_SIZE = 20
@@ -90,12 +95,23 @@ const summaryDetailError = ref('')
 const relatedNews = ref<NewsListItem[]>([])
 const relatedNewsLoading = ref(false)
 
+const sentimentOverview = ref<SentimentOverviewResponse | null>(null)
+const sentimentOverviewLoading = ref(false)
+const sentimentSeries = ref<SentimentSeriesResponse | null>(null)
+const sentimentTopic = ref('tech')
+const sentimentBucket = ref<'day' | 'week'>('week')
+const sentimentRange = ref<[string, string] | null>(null)
+const sentimentLoading = ref(false)
+const sentimentError = ref('')
+
 let newsController: AbortController | null = null
 let summaryController: AbortController | null = null
+let sentimentController: AbortController | null = null
 let newsListRequestId = 0
 let newsDetailRequestId = 0
 let summaryListRequestId = 0
 let summaryDetailRequestId = 0
+let sentimentRequestId = 0
 let pollTimer: number | null = null
 
 const isIndexing = computed(() => newsMeta.value?.status === 'building')
@@ -370,16 +386,78 @@ async function loadRelatedNews(summary: SummaryDetail): Promise<void> {
   }
 }
 
+async function loadSentimentOverview(): Promise<void> {
+  sentimentOverviewLoading.value = true
+  try {
+    sentimentOverview.value = await getSentimentOverview()
+  } catch (error) {
+    if (isAbortError(error)) {
+      return
+    }
+    sentimentOverview.value = null
+  } finally {
+    sentimentOverviewLoading.value = false
+  }
+}
+
+async function loadSentimentSeries(): Promise<void> {
+  sentimentLoading.value = true
+  sentimentError.value = ''
+  const requestId = ++sentimentRequestId
+  sentimentController?.abort()
+  const controller = new AbortController()
+  sentimentController = controller
+  try {
+    const response = await getSentimentSeries(
+      {
+        topic: sentimentTopic.value,
+        start: sentimentRange.value?.[0],
+        end: sentimentRange.value?.[1],
+        bucket: sentimentBucket.value,
+      },
+      controller.signal,
+    )
+    if (requestId !== sentimentRequestId) {
+      return
+    }
+    sentimentSeries.value = response
+  } catch (error) {
+    if (isAbortError(error) || requestId !== sentimentRequestId) {
+      return
+    }
+    sentimentSeries.value = null
+    sentimentError.value = toErrorMessage(error, '情绪指数加载失败，请稍后重试')
+  } finally {
+    if (requestId === sentimentRequestId) {
+      sentimentLoading.value = false
+    }
+  }
+}
+
+function reloadSentimentSeries(): void {
+  void loadSentimentSeries()
+}
+
+function formatCount(value: number): string {
+  if (value >= 10000) {
+    return `${(value / 10000).toFixed(1)} 万`
+  }
+  return String(value)
+}
+
 onMounted(() => {
   void loadNewsMeta()
   void loadNews()
   void loadSummaries()
+  void loadSentimentOverview()
+  void loadSentimentSeries()
 })
 
 onBeforeUnmount(() => {
   stopPolling()
   newsController?.abort()
   summaryController?.abort()
+  sentimentController?.abort()
 })
 </script>
 
@@ -785,6 +863,93 @@ onBeforeUnmount(() => {
           </section>
         </div>
       </el-tab-pane>
+
+      <el-tab-pane label="情绪指数" name="sentiment">
+        <div class="news-toolbar">
+          <el-select
+            v-model="sentimentTopic"
+            class="news-toolbar__filter"
+            @change="reloadSentimentSeries"
+          >
+            <el-option
+              v-for="opt in TOPIC_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
+          </el-select>
+          <el-date-picker
+            v-model="sentimentRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            class="news-toolbar__range"
+            :clearable="true"
+            @change="reloadSentimentSeries"
+          />
+          <el-radio-group v-model="sentimentBucket" size="default" @change="reloadSentimentSeries">
+            <el-radio-button value="week">按周</el-radio-button>
+            <el-radio-button value="day">按日</el-radio-button>
+          </el-radio-group>
+          <span v-if="sentimentSeries" class="news-toolbar__stats">
+            共 {{ sentimentSeries.points.length }} 个周期 · {{ sentimentSeries.summaries.length }} 条机构观点
+          </span>
+        </div>
+
+        <el-alert
+          v-if="sentimentError"
+          class="news-center__alert"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="sentimentError"
+        />
+
+        <div class="sentiment-topics" v-loading="sentimentOverviewLoading">
+          <button
+            v-for="topic in sentimentOverview?.topics ?? []"
+            :key="topic.topic"
+            type="button"
+            class="sentiment-card"
+            :class="{ 'sentiment-card--active': topic.topic === sentimentTopic }"
+            @click="sentimentTopic = topic.topic; reloadSentimentSeries()"
+          >
+            <span class="sentiment-card__label">{{ TOPIC_LABEL[topic.topic] ?? topic.topic }}</span>
+            <span
+              v-if="topic.news_bullish + topic.news_bearish + topic.news_neutral > 0"
+              class="sentiment-card__bar"
+            >
+              <i
+                class="sentiment-card__bar-bull"
+                :style="{ width: `${(topic.news_bullish / topic.news_total) * 100}%` }"
+              ></i>
+              <i
+                class="sentiment-card__bar-bear"
+                :style="{ width: `${(topic.news_bearish / topic.news_total) * 100}%` }"
+              ></i>
+            </span>
+            <span class="sentiment-card__meta">
+              新闻 {{ formatCount(topic.news_total) }} · 利好 {{ formatCount(topic.news_bullish) }} / 利空 {{ formatCount(topic.news_bearish) }}
+            </span>
+            <span class="sentiment-card__meta sentiment-card__meta--summary">
+              机构摘要 {{ formatCount(topic.summary_total) }} · 利好 {{ formatCount(topic.summary_bullish) }} / 利空 {{ formatCount(topic.summary_bearish) }}
+            </span>
+          </button>
+          <el-empty
+            v-if="!sentimentOverviewLoading && !(sentimentOverview?.topics?.length)"
+            description="暂无主题情绪概览"
+            :image-size="60"
+          />
+        </div>
+
+        <div class="sentiment-chart-wrap" v-loading="sentimentLoading">
+          <SentimentChart
+            :points="sentimentSeries?.points ?? []"
+            :summaries="sentimentSeries?.summaries ?? []"
+          />
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -1026,5 +1191,73 @@ onBeforeUnmount(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.sentiment-topics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  gap: 12px;
+  margin: 14px 0 18px;
+}
+
+.sentiment-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sentiment-card:hover {
+  border-color: #c6e2ff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.sentiment-card--active {
+  border-color: #409eff;
+  box-shadow: 0 0 0 1px #409eff inset;
+}
+
+.sentiment-card__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.sentiment-card__bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #e4e7ed;
+}
+
+.sentiment-card__bar-bull {
+  background: #67c23a;
+}
+
+.sentiment-card__bar-bear {
+  background: #f56c6c;
+}
+
+.sentiment-card__meta {
+  font-size: 12px;
+  color: #606266;
+}
+
+.sentiment-card__meta--summary {
+  color: #909399;
+}
+
+.sentiment-chart-wrap {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 14px;
 }
 </style>

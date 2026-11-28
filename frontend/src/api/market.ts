@@ -1,6 +1,8 @@
 import type {
   MarketAssetListResponse,
   MarketCompareResponse,
+  MarketIndicator,
+  MarketIndicatorListResponse,
   MarketRankingResponse,
   MarketSeries,
 } from '@/types/market'
@@ -14,6 +16,10 @@ export const MARKET_PATHS = {
     `/api/v1/market/compare?names=${encodeURIComponent(names.join(','))}${days === null ? '' : `&days=${days}`}`,
   ranking: (days: number | null) =>
     days === null ? '/api/v1/market/ranking' : `/api/v1/market/ranking?days=${days}`,
+  indicators: (days: number | null) =>
+    days === null ? '/api/v1/market/indicators' : `/api/v1/market/indicators?days=${days}`,
+  indicator: (key: string, days: number | null) =>
+    `/api/v1/market/indicators/${encodeURIComponent(key)}${days === null ? '' : `?days=${days}`}`,
 }
 
 async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -74,4 +80,19 @@ export function getMarketRanking(
   signal?: AbortSignal,
 ): Promise<MarketRankingResponse> {
   return requestJson<MarketRankingResponse>(MARKET_PATHS.ranking(days), signal)
+}
+
+export function getMarketIndicators(
+  days: number | null,
+  signal?: AbortSignal,
+): Promise<MarketIndicatorListResponse> {
+  return requestJson<MarketIndicatorListResponse>(MARKET_PATHS.indicators(days), signal)
+}
+
+export function getMarketIndicator(
+  key: string,
+  days: number | null,
+  signal?: AbortSignal,
+): Promise<MarketIndicator> {
+  return requestJson<MarketIndicator>(MARKET_PATHS.indicator(key, days), signal)
 }

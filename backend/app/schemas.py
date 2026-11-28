@@ -63,6 +63,39 @@ class MarketRankingResponse(BaseModel):
     items: list[MarketRankingItem]
 
 
+class MarketIndicatorSummary(BaseModel):
+    key: str
+    name: str
+    kind: str
+    unit: str
+    description: str
+    latest: float
+    latest_date: date
+    change: float
+    change_pct: float | None = None
+    point_count: int
+
+
+class MarketIndicatorListResponse(BaseModel):
+    days: int | None = None
+    items: list[MarketIndicatorSummary]
+
+
+class MarketIndicatorResponse(BaseModel):
+    key: str
+    name: str
+    kind: str
+    unit: str
+    description: str
+    start_date: date
+    end_date: date
+    latest: float
+    change: float
+    min_value: float
+    max_value: float
+    points: list[tuple[str, float]]
+
+
 class NewsListItem(BaseModel):
     id: str
     date: date | None

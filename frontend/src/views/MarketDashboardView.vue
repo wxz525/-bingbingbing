@@ -1,20 +1,30 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 
-import { getMarketCompare, getMarketRanking, getMarketSeries, listMarketAssets } from '@/api/market'
+import {
+  getMarketCompare,
+  getMarketIndicator,
+  getMarketIndicators,
+  getMarketRanking,
+  getMarketSeries,
+  listMarketAssets,
+} from '@/api/market'
 import MarketCompareChart from '@/components/MarketCompareChart.vue'
+import MarketIndicatorChart from '@/components/MarketIndicatorChart.vue'
 import MarketLineChart from '@/components/MarketLineChart.vue'
 import MarketRankingChart from '@/components/MarketRankingChart.vue'
 import type {
   MarketAsset,
   MarketCompareResponse,
+  MarketIndicator,
+  MarketIndicatorSummary,
   MarketRankingResponse,
   MarketSeries,
 } from '@/types/market'
 import { isAbortError } from '@/utils/format'
 
 type RangeKey = '1m' | '3m' | '1y' | '3y' | 'all'
-type ViewMode = 'single' | 'compare' | 'ranking'
+type ViewMode = 'single' | 'compare' | 'ranking' | 'indicator'
 
 const RANGE_OPTIONS: { label: string; value: RangeKey; days: number | null }[] = [
   { label: '近1月', value: '1m', days: 31 },
@@ -42,9 +52,15 @@ const compareError = ref('')
 const rankingData = ref<MarketRankingResponse | null>(null)
 const rankingLoading = ref(false)
 const rankingError = ref('')
+const indicatorItems = ref<MarketIndicatorSummary[]>([])
+const indicatorKey = ref('gold_silver')
+const indicatorData = ref<MarketIndicator | null>(null)
+const indicatorLoading = ref(false)
+const indicatorError = ref('')
 
 let compareController: AbortController | null = null
 let rankingController: AbortController | null = null
+let indicatorController: AbortController | null = null
 
 let seriesController: AbortController | null = null
 
@@ -464,6 +480,64 @@ function onRankingSelect(name: string): void {
   void selectAsset(name)
 }
 
+const indicatorGroups = computed(() => {
+  const ratio = indicatorItems.value.filter((item) => item.kind === 'ratio')
+  const spread = indicatorItems.value.filter((item) => item.kind === 'spread')
+  return [
+    { kind: 'ratio', label: '比值', items: ratio },
+    { kind: 'spread', label: '利差', items: spread },
+  ].filter((group) => group.items.length > 0)
+})
+
+function formatIndicatorValue(item: { latest: number; unit: string }): string {
+  return item.unit === 'pp' ? `${item.latest.toFixed(2)} pp` : item.latest.toFixed(2)
+}
+
+async function loadIndicators(): Promise<void> {
+  try {
+    const response = await getMarketIndicators(currentDays())
+    indicatorItems.value = response.items
+  } catch (error) {
+    if (!isAbortError(error)) {
+      indicatorItems.value = []
+      indicatorError.value = error instanceof Error ? error.message : '指标列表加载失败'
+    }
+  }
+}
+
+async function loadIndicatorSeries(): Promise<void> {
+  indicatorController?.abort()
+  const controller = new AbortController()
+  indicatorController = controller
+  indicatorLoading.value = true
+  indicatorError.value = ''
+  try {
+    const response = await getMarketIndicator(indicatorKey.value, currentDays(), controller.signal)
+    if (indicatorController !== controller) {
+      return
+    }
+    indicatorData.value = response
+  } catch (error) {
+    if (isAbortError(error) || indicatorController !== controller) {
+      return
+    }
+    indicatorData.value = null
+    indicatorError.value = error instanceof Error ? error.message : '指标数据加载失败'
+  } finally {
+    if (indicatorController === controller) {
+      indicatorLoading.value = false
+    }
+  }
+}
+
+function selectIndicator(key: string): void {
+  if (indicatorKey.value === key) {
+    return
+  }
+  indicatorKey.value = key
+  void loadIndicatorSeries()
+}
+
 watch(viewMode, (mode) => {
   if (mode === 'compare') {
     if (!compareNames.value.length && selectedName.value) {
@@ -483,6 +557,11 @@ watch(viewMode, (mode) => {
   }
   if (mode === 'ranking') {
     void loadRanking()
+    return
+  }
+  if (mode === 'indicator') {
+    void loadIndicators()
+    void loadIndicatorSeries()
   }
 })
 
@@ -497,6 +576,9 @@ watch(range, () => {
     void loadCompare()
   } else if (viewMode.value === 'ranking') {
     void loadRanking()
+  } else if (viewMode.value === 'indicator') {
+    void loadIndicators()
+    void loadIndicatorSeries()
   }
 })
 
@@ -567,6 +649,7 @@ onMounted(loadAssets)
             <el-radio-button value="single">走势</el-radio-button>
             <el-radio-button value="compare">对比</el-radio-button>
             <el-radio-button value="ranking">排行</el-radio-button>
+            <el-radio-button value="indicator">比值/利差</el-radio-button>
           </el-radio-group>
 
           <el-radio-group v-model="range" size="small">
@@ -672,7 +755,7 @@ onMounted(loadAssets)
         </div>
       </template>
 
-      <template v-else>
+      <template v-else-if="viewMode === 'ranking'">
         <p class="market-view__hint">
           当前区间全部价格类标的涨跌排行
           <span v-if="rankingData?.start_date">
@@ -699,6 +782,88 @@ onMounted(loadAssets)
           <el-empty
             v-else-if="!rankingLoading && !rankingError"
             description="当前区间暂无可排行标的"
+            :image-size="90"
+          />
+        </div>
+      </template>
+
+      <template v-else>
+        <p class="market-view__hint">
+          由现有行情序列实时折算：比值 = 分子 / 分母，利差 = 分子 − 分母（单位 pp）· 点击下方指标切换
+        </p>
+
+        <el-alert
+          v-if="indicatorError"
+          :title="indicatorError"
+          type="error"
+          :closable="false"
+          show-icon
+        />
+
+        <div class="indicator-chips">
+          <div v-for="group in indicatorGroups" :key="group.kind" class="indicator-chips__group">
+            <span class="indicator-chips__label">{{ group.label }}</span>
+            <button
+              v-for="item in group.items"
+              :key="item.key"
+              type="button"
+              class="indicator-chip"
+              :class="{ 'indicator-chip--active': item.key === indicatorKey }"
+              @click="selectIndicator(item.key)"
+            >
+              <span class="indicator-chip__name">{{ item.name }}</span>
+              <span class="indicator-chip__value">{{ formatIndicatorValue(item) }}</span>
+              <span
+                class="indicator-chip__change"
+                :class="item.change >= 0 ? 'is-up' : 'is-down'"
+              >
+                {{ item.change >= 0 ? '+' : '' }}{{ item.change.toFixed(2) }}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="indicatorData" class="market-stats">
+          <div class="market-stat">
+            <span class="market-stat__label">最新值</span>
+            <span class="market-stat__value">
+              {{ formatIndicatorValue(indicatorData) }}
+            </span>
+            <span class="market-stat__hint">{{ indicatorData.name }}</span>
+          </div>
+          <div class="market-stat">
+            <span class="market-stat__label">区间变化</span>
+            <span class="market-stat__value" :class="indicatorData.change >= 0 ? 'is-up' : 'is-down'">
+              {{ indicatorData.change >= 0 ? '+' : '' }}{{ indicatorData.change.toFixed(2) }}
+            </span>
+            <span class="market-stat__hint">{{ indicatorData.start_date }} 起</span>
+          </div>
+          <div class="market-stat">
+            <span class="market-stat__label">区间最高 / 最低</span>
+            <span class="market-stat__value market-stat__value--small">
+              {{ indicatorData.max_value.toFixed(2) }} / {{ indicatorData.min_value.toFixed(2) }}
+            </span>
+            <span class="market-stat__hint">样本 {{ indicatorData.points.length }} 条</span>
+          </div>
+          <div class="market-stat">
+            <span class="market-stat__label">数据区间</span>
+            <span class="market-stat__value market-stat__value--small">
+              {{ indicatorData.start_date }} ~ {{ indicatorData.end_date }}
+            </span>
+            <span class="market-stat__hint">分子 / 分母取并集日期对齐</span>
+          </div>
+        </div>
+
+        <div v-loading="indicatorLoading" class="market-view__chart">
+          <MarketIndicatorChart
+            v-if="indicatorData && indicatorData.points.length"
+            :points="indicatorData.points"
+            :unit="indicatorData.unit"
+            :kind="indicatorData.kind"
+          />
+          <el-empty
+            v-else-if="!indicatorLoading && !indicatorError"
+            description="选择指标后展示走势"
             :image-size="90"
           />
         </div>
@@ -836,6 +1001,64 @@ onMounted(loadAssets)
   margin: 0;
   font-size: 12px;
   color: #909399;
+}
+
+.indicator-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.indicator-chips__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.indicator-chips__label {
+  flex: 0 0 32px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.indicator-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fafbfc;
+  font-size: 12px;
+  color: #303133;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.indicator-chip:hover {
+  border-color: #c6e2ff;
+  background: #f5f9ff;
+}
+
+.indicator-chip--active {
+  border-color: #409eff;
+  background: #ecf5ff;
+  color: #409eff;
+  font-weight: 600;
+}
+
+.indicator-chip__value {
+  font-variant-numeric: tabular-nums;
+  color: #606266;
+}
+
+.indicator-chip--active .indicator-chip__value {
+  color: #409eff;
+}
+
+.indicator-chip__change {
+  font-variant-numeric: tabular-nums;
 }
 
 .market-view__title {

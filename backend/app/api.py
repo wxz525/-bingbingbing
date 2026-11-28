@@ -3,6 +3,8 @@ from fastapi import APIRouter, Query, Request
 from app.schemas import (
     MarketAssetListResponse,
     MarketCompareResponse,
+    MarketIndicatorListResponse,
+    MarketIndicatorResponse,
     MarketRankingResponse,
     MarketSeriesResponse,
     NewsDetailResponse,
@@ -53,6 +55,23 @@ def market_ranking(
     days: int | None = Query(default=None, ge=20, le=11000),
 ) -> MarketRankingResponse:
     return _market_service(request).get_ranking(days)
+
+
+@market_router.get("/indicators", response_model=MarketIndicatorListResponse)
+def market_indicators(
+    request: Request,
+    days: int | None = Query(default=None, ge=20, le=11000),
+) -> MarketIndicatorListResponse:
+    return _market_service(request).list_indicators(days)
+
+
+@market_router.get("/indicators/{key}", response_model=MarketIndicatorResponse)
+def market_indicator(
+    request: Request,
+    key: str,
+    days: int | None = Query(default=None, ge=20, le=11000),
+) -> MarketIndicatorResponse:
+    return _market_service(request).get_indicator(key, days)
 
 
 @news_router.get("/news/meta", response_model=NewsMetaResponse)

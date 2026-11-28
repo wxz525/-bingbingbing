@@ -23,3 +23,9 @@ package-lock.json
 *.tmp
 *.log
 logs/
+
+# ===== 运行产物 / 本地缓存（不提交）=====
+outputs/
+.cache/
+cachetest/
+vite.config.ts.timestamp-*.mjs

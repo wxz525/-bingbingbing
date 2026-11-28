@@ -36,7 +36,7 @@ export interface MarketScatterPoint {
 }
 
 export interface MarketScatterResponse {
-  years: number | null
+  days: number | null
   latest_date: string | null
   risk_free_rate: number
   items: MarketScatterPoint[]

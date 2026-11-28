@@ -41,7 +41,7 @@ class MarketScatterPoint(BaseModel):
 
 
 class MarketScatterResponse(BaseModel):
-    years: int | None = None
+    days: int | None = None
     latest_date: date | None = None
     risk_free_rate: float
     items: list[MarketScatterPoint]

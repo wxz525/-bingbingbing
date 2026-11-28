@@ -5,8 +5,8 @@ import { isAbortError } from '@/utils/format'
 export const MARKET_PATHS = {
   assets: '/api/v1/market/assets',
   series: (name: string) => `/api/v1/market/series/${encodeURIComponent(name)}`,
-  scatter: (years: number | null) =>
-    years === null ? '/api/v1/market/scatter' : `/api/v1/market/scatter?years=${years}`,
+  scatter: (days: number | null) =>
+    days === null ? '/api/v1/market/scatter' : `/api/v1/market/scatter?days=${days}`,
 }
 
 async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -55,8 +55,8 @@ export function getMarketSeries(name: string, signal?: AbortSignal): Promise<Mar
 }
 
 export function getMarketScatter(
-  years: number | null = 3,
+  days: number | null,
   signal?: AbortSignal,
 ): Promise<MarketScatterResponse> {
-  return requestJson<MarketScatterResponse>(MARKET_PATHS.scatter(years), signal)
+  return requestJson<MarketScatterResponse>(MARKET_PATHS.scatter(days), signal)
 }

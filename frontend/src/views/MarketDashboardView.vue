@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import { getMarketScatter, getMarketSeries, listMarketAssets } from '@/api/market'
 import MarketLineChart from '@/components/MarketLineChart.vue'
@@ -29,7 +29,7 @@ const errorMessage = ref('')
 const scatterItems = ref<MarketScatterPoint[]>([])
 const scatterLoading = ref(false)
 const scatterError = ref('')
-const SCATTER_YEARS = 3
+let scatterController: AbortController | null = null
 
 let seriesController: AbortController | null = null
 
@@ -359,21 +359,39 @@ async function selectAsset(name: string): Promise<void> {
   }
 }
 
+const rangeLabel = computed(
+  () => RANGE_OPTIONS.find((item) => item.value === range.value)?.label ?? '',
+)
+
 async function loadScatter(): Promise<void> {
+  scatterController?.abort()
+  const controller = new AbortController()
+  scatterController = controller
   scatterLoading.value = true
   scatterError.value = ''
   try {
-    const response = await getMarketScatter(SCATTER_YEARS)
+    const option = RANGE_OPTIONS.find((item) => item.value === range.value)
+    const response = await getMarketScatter(option?.days ?? null, controller.signal)
+    if (scatterController !== controller) {
+      return
+    }
     scatterItems.value = response.items
   } catch (error) {
-    if (!isAbortError(error)) {
-      scatterItems.value = []
-      scatterError.value = error instanceof Error ? error.message : '风险收益统计加载失败'
+    if (isAbortError(error) || scatterController !== controller) {
+      return
     }
+    scatterItems.value = []
+    scatterError.value = error instanceof Error ? error.message : '风险收益统计加载失败'
   } finally {
-    scatterLoading.value = false
+    if (scatterController === controller) {
+      scatterLoading.value = false
+    }
   }
 }
+
+watch(range, () => {
+  void loadScatter()
+})
 
 onMounted(() => {
   void loadAssets()
@@ -503,7 +521,7 @@ onMounted(() => {
           <div>
             <h3 class="market-view__scatter-title">风险 - 收益分布</h3>
             <p class="market-view__scatter-hint">
-              近 {{ SCATTER_YEARS }} 年年化口径 · 横轴为年化波动率，纵轴为年化收益率 · 越靠左上性价比越高，点击圆点切换标的
+              {{ rangeLabel }}年化口径 · 横轴为年化波动率，纵轴为年化收益率 · 双轴对数刻度，可同时容纳低波动标的与极端值 · 点击圆点切换标的
             </p>
           </div>
           <el-tag size="small" type="info" effect="plain">{{ scatterItems.length }} 个标的</el-tag>

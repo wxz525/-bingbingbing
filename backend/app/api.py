@@ -39,9 +39,9 @@ def get_market_series(request: Request, name: str) -> MarketSeriesResponse:
 @market_router.get("/scatter", response_model=MarketScatterResponse)
 def market_risk_return(
     request: Request,
-    years: int | None = Query(default=3, ge=1, le=30),
+    days: int | None = Query(default=None, ge=20, le=11000),
 ) -> MarketScatterResponse:
-    return _market_service(request).get_scatter(years)
+    return _market_service(request).get_scatter(days)
 
 
 @news_router.get("/news/meta", response_model=NewsMetaResponse)

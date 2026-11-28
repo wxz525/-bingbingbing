@@ -32,34 +32,51 @@ const PADDING = { left: 68, right: 24, top: 22, bottom: 46 }
 const plotWidth = WIDTH - PADDING.left - PADDING.right
 const plotHeight = HEIGHT - PADDING.top - PADDING.bottom
 
-const xMax = computed(() => {
-  const maxVol = props.items.reduce((max, item) => Math.max(max, item.annual_volatility), 0)
-  return maxVol > 0 ? maxVol * 1.12 : 0.1
-})
+// 短区间年化后会出现 ±1000% 级别的极值，横轴（波动率）用对数、纵轴（收益率）用对称对数，
+// 保证低波动标的与极端值可以同时落在图内。
+const X_MIN_FLOOR = 0.005
+const Y_SCALE = 0.12
 
-const yBounds = computed(() => {
-  let min = 0
-  let max = 0
-  for (const item of props.items) {
-    min = Math.min(min, item.annual_return)
-    max = Math.max(max, item.annual_return)
+function formatPercent(value: number, digits = 1): string {
+  return `${(value * 100).toFixed(digits)}%`
+}
+
+const xDomain = computed(() => {
+  const vols = props.items.map((item) => item.annual_volatility).filter((value) => value > 0)
+  if (!vols.length) {
+    return { lo: Math.log10(0.01), hi: Math.log10(1) }
   }
-  const padMin = Math.abs(min) * 0.12 || 0.01
-  const padMax = Math.abs(max) * 0.12 || 0.01
-  return { min: min - padMin, max: max + padMax }
+  const min = Math.max(Math.min(...vols), X_MIN_FLOOR)
+  const max = Math.max(...vols, min * 1.2)
+  const pad = Math.max((Math.log10(max) - Math.log10(min)) * 0.06, 0.03)
+  return { lo: Math.log10(min) - pad, hi: Math.log10(max) + pad }
 })
 
 function xFor(value: number): number {
-  return PADDING.left + (value / xMax.value) * plotWidth
+  const { lo, hi } = xDomain.value
+  const ratio = (Math.log10(Math.max(value, X_MIN_FLOOR)) - lo) / (hi - lo)
+  return PADDING.left + Math.min(1, Math.max(0, ratio)) * plotWidth
 }
+
+function yTransform(value: number): number {
+  return Math.asinh(value / Y_SCALE)
+}
+
+const yDomain = computed(() => {
+  let lo = 0
+  let hi = 0
+  for (const item of props.items) {
+    const value = yTransform(item.annual_return)
+    lo = Math.min(lo, value)
+    hi = Math.max(hi, value)
+  }
+  const pad = Math.max((hi - lo) * 0.06, 0.05)
+  return { lo: lo - pad, hi: hi + pad }
+})
 
 function yFor(value: number): number {
-  const { min, max } = yBounds.value
-  return PADDING.top + ((max - value) / (max - min)) * plotHeight
-}
-
-function formatPercent(value: number): string {
-  return `${(value * 100).toFixed(1)}%`
+  const { lo, hi } = yDomain.value
+  return PADDING.top + ((hi - yTransform(value)) / (hi - lo)) * plotHeight
 }
 
 const hoveredName = ref('')
@@ -82,28 +99,49 @@ const points = computed(() =>
   }),
 )
 
-const hoveredPoint = computed(
-  () => points.value.find((point) => point.hovered) ?? null,
-)
+const hoveredPoint = computed(() => points.value.find((point) => point.hovered) ?? null)
+
+const X_TICK_CANDIDATES = [0.01, 0.02, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2, 0.3, 0.5, 0.8, 1, 1.5, 2]
+const Y_TICK_CANDIDATES = [
+  -2, -1, -0.5, -0.3, -0.2, -0.1, -0.05, 0, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20,
+]
+
+function fallbackTicks(lo: number, hi: number): number[] {
+  return Array.from({ length: 4 }, (_, index) => lo + ((hi - lo) * index) / 3)
+}
 
 const xTicks = computed(() => {
-  const count = 5
-  return Array.from({ length: count + 1 }, (_, index) => {
-    const value = (xMax.value * index) / count
-    return { value, x: xFor(value), text: `${(value * 100).toFixed(0)}%` }
+  const { lo, hi } = xDomain.value
+  const picked = X_TICK_CANDIDATES.filter((value) => {
+    const t = Math.log10(value)
+    return t > lo && t < hi
   })
+  const values =
+    picked.length >= 3
+      ? picked
+      : fallbackTicks(lo, hi).map((t) => 10 ** t)
+  return values.map((value) => ({
+    key: value,
+    x: xFor(value),
+    text: formatPercent(value, 0),
+  }))
 })
 
 const yTicks = computed(() => {
-  const { min, max } = yBounds.value
-  const count = 4
-  return Array.from({ length: count + 1 }, (_, index) => {
-    const value = min + ((max - min) * index) / count
-    return { value, y: yFor(value), text: `${(value * 100).toFixed(0)}%` }
+  const { lo, hi } = yDomain.value
+  const picked = Y_TICK_CANDIDATES.filter((value) => {
+    const t = yTransform(value)
+    return t > lo && t < hi
   })
+  const values = picked.length >= 2 ? picked : fallbackTicks(lo, hi).map((t) => Math.sinh(t) * Y_SCALE)
+  return values.map((value) => ({
+    key: value,
+    y: yFor(value),
+    text: formatPercent(value, 0),
+  }))
 })
 
-const zeroY = computed(() => (yBounds.value.min <= 0 ? yFor(0) : null))
+const zeroY = computed(() => yFor(0))
 
 const legend = computed(() => {
   const seen = new Set(props.items.map((item) => item.category))
@@ -146,8 +184,8 @@ const tooltipStyle = computed(() => {
         aria-label="风险收益散点图"
       >
         <line
-          v-for="(tick, index) in yTicks"
-          :key="`yg-${index}`"
+          v-for="tick in yTicks"
+          :key="`yg-${tick.key}`"
           :x1="PADDING.left"
           :x2="WIDTH - PADDING.right"
           :y1="tick.y"
@@ -155,8 +193,8 @@ const tooltipStyle = computed(() => {
           class="scatter__grid"
         />
         <line
-          v-for="(tick, index) in xTicks"
-          :key="`xg-${index}`"
+          v-for="tick in xTicks"
+          :key="`xg-${tick.key}`"
           :x1="tick.x"
           :x2="tick.x"
           :y1="PADDING.top"
@@ -164,7 +202,6 @@ const tooltipStyle = computed(() => {
           class="scatter__grid scatter__grid--v"
         />
         <line
-          v-if="zeroY !== null"
           :x1="PADDING.left"
           :x2="WIDTH - PADDING.right"
           :y1="zeroY"
@@ -173,8 +210,8 @@ const tooltipStyle = computed(() => {
         />
 
         <text
-          v-for="(tick, index) in yTicks"
-          :key="`yt-${index}`"
+          v-for="tick in yTicks"
+          :key="`yt-${tick.key}`"
           :x="PADDING.left - 10"
           :y="tick.y + 3"
           class="scatter__axis-text"
@@ -183,8 +220,8 @@ const tooltipStyle = computed(() => {
           {{ tick.text }}
         </text>
         <text
-          v-for="(tick, index) in xTicks"
-          :key="`xt-${index}`"
+          v-for="tick in xTicks"
+          :key="`xt-${tick.key}`"
           :x="tick.x"
           :y="HEIGHT - PADDING.bottom + 18"
           class="scatter__axis-text"
@@ -194,7 +231,7 @@ const tooltipStyle = computed(() => {
         </text>
 
         <text :x="WIDTH - PADDING.right" :y="HEIGHT - 8" class="scatter__axis-title" text-anchor="end">
-          年化波动率（风险）→
+          年化波动率（风险，对数刻度）→
         </text>
         <text
           :x="PADDING.left - 46"
@@ -203,7 +240,7 @@ const tooltipStyle = computed(() => {
           text-anchor="middle"
           :transform="`rotate(-90 ${PADDING.left - 46} ${PADDING.top + plotHeight / 2})`"
         >
-          年化收益率 →
+          年化收益率（对称对数刻度）→
         </text>
 
         <g v-for="point in points" :key="point.item.name">

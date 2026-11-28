@@ -12,7 +12,7 @@ from app.schemas import (
 )
 
 RISK_FREE_RATE = 0.02
-MIN_SCATTER_POINTS = 60
+MIN_SCATTER_POINTS = 20
 
 
 def _daily_returns(values: list[float]) -> list[float]:
@@ -72,7 +72,7 @@ class MarketService:
             points=points,
         )
 
-    def get_scatter(self, years: int | None = 3) -> MarketScatterResponse:
+    def get_scatter(self, days: int | None = None) -> MarketScatterResponse:
         """按年化波动率（风险）与年化收益率（收益）汇总全部价格类标的。"""
         assets = self._repository.list_assets()
         series_by_name: dict[str, list[tuple[str, float]]] = {}
@@ -94,8 +94,8 @@ class MarketService:
                 latest = end
 
         cutoff: date | None = None
-        if latest is not None and years is not None:
-            cutoff = latest - timedelta(days=365 * years)
+        if latest is not None and days is not None:
+            cutoff = latest - timedelta(days=days)
 
         items: list[MarketScatterPoint] = []
         for asset in assets:
@@ -148,7 +148,7 @@ class MarketService:
             )
 
         return MarketScatterResponse(
-            years=years,
+            days=days,
             latest_date=latest,
             risk_free_rate=RISK_FREE_RATE,
             items=items,

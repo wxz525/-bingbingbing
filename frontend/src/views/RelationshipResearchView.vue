@@ -74,22 +74,9 @@ watch(
 
 <style scoped>
 .research-view {
-  --syn-page: #080d24;
-  --syn-surface: #142139;
-  --syn-surface-2: #192b43;
-  --syn-brand: #169ed4;
-  --syn-highlight: #47c3e8;
-  --syn-accent: #8978e2;
-  --syn-text: #f0f5ff;
-  --syn-text-2: #94aec6;
-  --syn-line: #30435d;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px 22px 28px;
-  border-radius: 8px;
-  background: var(--syn-page);
-  color: var(--syn-text);
+  gap: 16px;
 }
 
 .research-view__head {
@@ -98,8 +85,10 @@ watch(
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(48, 67, 93, 0.7);
+  padding: 18px 20px;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .research-view__title-row {
@@ -111,63 +100,74 @@ watch(
 
 .research-view__title {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--syn-text);
+  color: #303133;
 }
 
 .research-view__english {
   font-size: 12px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--syn-text-2);
+  color: #909399;
 }
 
 .research-view__subtitle {
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--syn-text-2);
+  color: #909399;
 }
 
 .research-view__range {
   display: inline-flex;
-  padding: 2px;
-  border: 1px solid var(--syn-line);
-  border-radius: 5px;
-  background: #0c1330;
 }
 
 .range-button {
   padding: 5px 12px;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--syn-text-2);
+  border: 1px solid #dcdfe6;
+  background: #ffffff;
+  color: #606266;
   font-size: 12px;
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.range-button + .range-button {
+  margin-left: -1px;
+}
+
+.range-button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.range-button:last-child {
+  border-radius: 0 4px 4px 0;
 }
 
 .range-button:hover {
-  color: var(--syn-text);
+  color: #409eff;
 }
 
 .range-button--active {
-  background: rgba(22, 158, 212, 0.22);
-  color: var(--syn-highlight);
+  position: relative;
+  z-index: 1;
+  border-color: #409eff;
+  background: #ecf5ff;
+  color: #409eff;
 }
 
 .research-view__plan {
   margin: 0;
+  padding: 0 4px;
   font-size: 11px;
   line-height: 1.6;
-  color: rgba(148, 174, 198, 0.7);
+  color: #909399;
 }
 
 @media (max-width: 720px) {
-  .research-view {
-    padding: 16px 14px 22px;
+  .research-view__head {
+    padding: 14px;
   }
 }
+
 </style>

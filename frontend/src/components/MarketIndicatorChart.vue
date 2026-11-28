@@ -174,7 +174,10 @@ const xLabels = computed(() => {
   if (!count) {
     return []
   }
-  const slots = Math.max(2, Math.min(7, Math.floor(plotWidth.value / 120)))
+  const slots = Math.min(
+    props.points.length,
+    Math.max(2, Math.min(7, Math.floor(plotWidth.value / 90))),
+  )
   return Array.from({ length: slots }, (_, index) => {
     const position = Math.round((index * (count - 1)) / (slots - 1 || 1))
     return {
@@ -488,88 +491,87 @@ const changeText = computed(() => {
 }
 
 .indicator-chart__grid {
-  stroke: #22344d;
+  stroke: #ebeef5;
   stroke-width: 1;
 }
 
 .indicator-chart__baseline {
-  stroke: #8978e2;
+  stroke: #c0c4cc;
   stroke-width: 1;
   stroke-dasharray: 5 4;
-  opacity: 0.75;
+  opacity: 0.9;
 }
 
 .indicator-chart__baseline-text {
   font-size: 10px;
-  fill: #8978e2;
+  fill: #909399;
   letter-spacing: 0.04em;
 }
 
 .indicator-chart__band {
-  fill: #8978e2;
+  fill: #909399;
   fill-opacity: 0.12;
 }
 
 .indicator-chart__mean {
-  stroke: #94aec6;
+  stroke: #c0c4cc;
   stroke-width: 1;
   stroke-dasharray: 4 4;
-  opacity: 0.65;
+  opacity: 0.9;
 }
 
 .indicator-chart__axis-text {
   font-size: 10px;
-  fill: #94aec6;
+  fill: #909399;
   font-variant-numeric: tabular-nums;
 }
 
 .indicator-chart__area {
-  fill: #169ed4;
-  fill-opacity: 0.1;
+  fill: #409eff;
+  fill-opacity: 0.08;
 }
 
 .indicator-chart__line {
   fill: none;
-  stroke: #47c3e8;
+  stroke: #409eff;
   stroke-width: 1.6;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 
 .indicator-chart__latest-line {
-  stroke: #30435d;
+  stroke: #e4e7ed;
   stroke-width: 1;
   stroke-dasharray: 3 3;
 }
 
 .indicator-chart__latest-dot {
-  fill: #47c3e8;
-  stroke: #080d24;
+  fill: #409eff;
+  stroke: #ffffff;
   stroke-width: 1.5;
 }
 
 .indicator-chart__latest-text {
   font-size: 10px;
-  fill: #f0f5ff;
+  fill: #303133;
   font-variant-numeric: tabular-nums;
 }
 
 .indicator-chart__crosshair {
-  stroke: #94aec6;
+  stroke: #c0c4cc;
   stroke-width: 1;
   stroke-dasharray: 3 3;
-  opacity: 0.7;
 }
 
 .indicator-chart__dot {
-  fill: #47c3e8;
-  stroke: #080d24;
+  fill: #409eff;
+  stroke: #ffffff;
   stroke-width: 1.5;
 }
 
 .indicator-chart__empty {
   font-size: 13px;
-  fill: #94aec6;
+  fill: #909399;
 }
 
 .indicator-chart__tooltip {
@@ -578,25 +580,25 @@ const changeText = computed(() => {
   z-index: 2;
   min-width: 150px;
   padding: 8px 10px;
-  border: 1px solid #30435d;
+  border: 1px solid #ebeef5;
   border-radius: 6px;
-  background: #0d1730;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
   font-size: 12px;
-  color: #94aec6;
+  color: #606266;
   pointer-events: none;
   transform: translateX(-50%);
 }
 
 .indicator-chart__tooltip-date {
   margin-bottom: 4px;
-  color: #94aec6;
+  color: #909399;
 }
 
 .indicator-chart__tooltip-value {
   font-size: 15px;
   font-weight: 600;
-  color: #f0f5ff;
+  color: #303133;
   font-variant-numeric: tabular-nums;
 }
 
@@ -605,7 +607,7 @@ const changeText = computed(() => {
 }
 
 .indicator-chart__tooltip-change span {
-  color: #f0f5ff;
+  color: #303133;
   font-variant-numeric: tabular-nums;
 }
 </style>

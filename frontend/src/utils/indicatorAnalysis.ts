@@ -683,7 +683,7 @@ export function formatAxisDate(date: string, spanDays: number): string {
   if (!date) {
     return ''
   }
-  if (spanDays > 400) {
+  if (spanDays > 300) {
     return date.slice(2, 7)
   }
   return date.slice(5)

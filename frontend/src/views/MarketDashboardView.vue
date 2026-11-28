@@ -24,7 +24,7 @@ import type {
 import { isAbortError } from '@/utils/format'
 
 type RangeKey = '1m' | '3m' | '1y' | '3y' | 'all'
-type ViewMode = 'single' | 'compare' | 'ranking' | 'indicator'
+type ViewMode = 'single' | 'compare' | 'ranking'
 
 const RANGE_OPTIONS: { label: string; value: RangeKey; days: number | null }[] = [
   { label: '近1月', value: '1m', days: 31 },
@@ -557,11 +557,6 @@ watch(viewMode, (mode) => {
   }
   if (mode === 'ranking') {
     void loadRanking()
-    return
-  }
-  if (mode === 'indicator') {
-    void loadIndicators()
-    void loadIndicatorSeries()
   }
 })
 
@@ -576,13 +571,20 @@ watch(range, () => {
     void loadCompare()
   } else if (viewMode.value === 'ranking') {
     void loadRanking()
-  } else if (viewMode.value === 'indicator') {
-    void loadIndicators()
-    void loadIndicatorSeries()
   }
+  void loadIndicators()
+  void loadIndicatorSeries()
 })
 
-onMounted(loadAssets)
+const rangeLabel = computed(
+  () => RANGE_OPTIONS.find((item) => item.value === range.value)?.label ?? '',
+)
+
+onMounted(() => {
+  void loadAssets()
+  void loadIndicators()
+  void loadIndicatorSeries()
+})
 </script>
 
 <template>
@@ -632,6 +634,7 @@ onMounted(loadAssets)
       </div>
     </aside>
 
+    <div class="market-view__content">
     <section class="market-view__main">
       <div class="market-view__header">
         <div class="market-view__title-block">
@@ -649,7 +652,6 @@ onMounted(loadAssets)
             <el-radio-button value="single">走势</el-radio-button>
             <el-radio-button value="compare">对比</el-radio-button>
             <el-radio-button value="ranking">排行</el-radio-button>
-            <el-radio-button value="indicator">比值/利差</el-radio-button>
           </el-radio-group>
 
           <el-radio-group v-model="range" size="small">
@@ -755,7 +757,7 @@ onMounted(loadAssets)
         </div>
       </template>
 
-      <template v-else-if="viewMode === 'ranking'">
+      <template v-else>
         <p class="market-view__hint">
           当前区间全部价格类标的涨跌排行
           <span v-if="rankingData?.start_date">
@@ -787,88 +789,93 @@ onMounted(loadAssets)
         </div>
       </template>
 
-      <template v-else>
-        <p class="market-view__hint">
-          由现有行情序列实时折算：比值 = 分子 / 分母，利差 = 分子 − 分母（单位 pp）· 点击下方指标切换
-        </p>
-
-        <el-alert
-          v-if="indicatorError"
-          :title="indicatorError"
-          type="error"
-          :closable="false"
-          show-icon
-        />
-
-        <div class="indicator-chips">
-          <div v-for="group in indicatorGroups" :key="group.kind" class="indicator-chips__group">
-            <span class="indicator-chips__label">{{ group.label }}</span>
-            <button
-              v-for="item in group.items"
-              :key="item.key"
-              type="button"
-              class="indicator-chip"
-              :class="{ 'indicator-chip--active': item.key === indicatorKey }"
-              @click="selectIndicator(item.key)"
-            >
-              <span class="indicator-chip__name">{{ item.name }}</span>
-              <span class="indicator-chip__value">{{ formatIndicatorValue(item) }}</span>
-              <span
-                class="indicator-chip__change"
-                :class="item.change >= 0 ? 'is-up' : 'is-down'"
-              >
-                {{ item.change >= 0 ? '+' : '' }}{{ item.change.toFixed(2) }}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div v-if="indicatorData" class="market-stats">
-          <div class="market-stat">
-            <span class="market-stat__label">最新值</span>
-            <span class="market-stat__value">
-              {{ formatIndicatorValue(indicatorData) }}
-            </span>
-            <span class="market-stat__hint">{{ indicatorData.name }}</span>
-          </div>
-          <div class="market-stat">
-            <span class="market-stat__label">区间变化</span>
-            <span class="market-stat__value" :class="indicatorData.change >= 0 ? 'is-up' : 'is-down'">
-              {{ indicatorData.change >= 0 ? '+' : '' }}{{ indicatorData.change.toFixed(2) }}
-            </span>
-            <span class="market-stat__hint">{{ indicatorData.start_date }} 起</span>
-          </div>
-          <div class="market-stat">
-            <span class="market-stat__label">区间最高 / 最低</span>
-            <span class="market-stat__value market-stat__value--small">
-              {{ indicatorData.max_value.toFixed(2) }} / {{ indicatorData.min_value.toFixed(2) }}
-            </span>
-            <span class="market-stat__hint">样本 {{ indicatorData.points.length }} 条</span>
-          </div>
-          <div class="market-stat">
-            <span class="market-stat__label">数据区间</span>
-            <span class="market-stat__value market-stat__value--small">
-              {{ indicatorData.start_date }} ~ {{ indicatorData.end_date }}
-            </span>
-            <span class="market-stat__hint">分子 / 分母取并集日期对齐</span>
-          </div>
-        </div>
-
-        <div v-loading="indicatorLoading" class="market-view__chart">
-          <MarketIndicatorChart
-            v-if="indicatorData && indicatorData.points.length"
-            :points="indicatorData.points"
-            :unit="indicatorData.unit"
-            :kind="indicatorData.kind"
-          />
-          <el-empty
-            v-else-if="!indicatorLoading && !indicatorError"
-            description="选择指标后展示走势"
-            :image-size="90"
-          />
-        </div>
-      </template>
     </section>
+
+    <section class="market-view__indicator-panel">
+      <div class="market-view__panel-head">
+        <div>
+          <h3 class="market-view__panel-title">比值 / 利差</h3>
+          <p class="market-view__panel-hint">
+            由现有行情序列实时折算：比值 = 分子 / 分母，利差 = 分子 − 分母（单位 pp）· 区间跟随上方「{{ rangeLabel }}」· 点击指标切换
+          </p>
+        </div>
+        <el-tag size="small" type="info" effect="plain">
+          {{ indicatorItems.length }} 个指标
+        </el-tag>
+      </div>
+
+      <el-alert
+        v-if="indicatorError"
+        :title="indicatorError"
+        type="error"
+        :closable="false"
+        show-icon
+      />
+
+      <div class="indicator-chips">
+        <div v-for="group in indicatorGroups" :key="group.kind" class="indicator-chips__group">
+          <span class="indicator-chips__label">{{ group.label }}</span>
+          <button
+            v-for="item in group.items"
+            :key="item.key"
+            type="button"
+            class="indicator-chip"
+            :class="{ 'indicator-chip--active': item.key === indicatorKey }"
+            @click="selectIndicator(item.key)"
+          >
+            <span class="indicator-chip__name">{{ item.name }}</span>
+            <span class="indicator-chip__value">{{ formatIndicatorValue(item) }}</span>
+            <span class="indicator-chip__change" :class="item.change >= 0 ? 'is-up' : 'is-down'">
+              {{ item.change >= 0 ? '+' : '' }}{{ item.change.toFixed(2) }}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="indicatorData" class="market-stats">
+        <div class="market-stat">
+          <span class="market-stat__label">最新值</span>
+          <span class="market-stat__value">{{ formatIndicatorValue(indicatorData) }}</span>
+          <span class="market-stat__hint">{{ indicatorData.name }}</span>
+        </div>
+        <div class="market-stat">
+          <span class="market-stat__label">区间变化</span>
+          <span class="market-stat__value" :class="indicatorData.change >= 0 ? 'is-up' : 'is-down'">
+            {{ indicatorData.change >= 0 ? '+' : '' }}{{ indicatorData.change.toFixed(2) }}
+          </span>
+          <span class="market-stat__hint">{{ indicatorData.start_date }} 起</span>
+        </div>
+        <div class="market-stat">
+          <span class="market-stat__label">区间最高 / 最低</span>
+          <span class="market-stat__value market-stat__value--small">
+            {{ indicatorData.max_value.toFixed(2) }} / {{ indicatorData.min_value.toFixed(2) }}
+          </span>
+          <span class="market-stat__hint">样本 {{ indicatorData.points.length }} 条</span>
+        </div>
+        <div class="market-stat">
+          <span class="market-stat__label">数据区间</span>
+          <span class="market-stat__value market-stat__value--small">
+            {{ indicatorData.start_date }} ~ {{ indicatorData.end_date }}
+          </span>
+          <span class="market-stat__hint">分子 / 分母取并集日期对齐</span>
+        </div>
+      </div>
+
+      <div v-loading="indicatorLoading" class="market-view__chart">
+        <MarketIndicatorChart
+          v-if="indicatorData && indicatorData.points.length"
+          :points="indicatorData.points"
+          :unit="indicatorData.unit"
+          :kind="indicatorData.kind"
+        />
+        <el-empty
+          v-else-if="!indicatorLoading && !indicatorError"
+          description="选择指标后展示走势"
+          :image-size="90"
+        />
+      </div>
+    </section>
+    </div>
   </div>
 </template>
 
@@ -877,6 +884,45 @@ onMounted(loadAssets)
   display: flex;
   gap: 16px;
   align-items: stretch;
+}
+
+.market-view__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.market-view__indicator-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.market-view__panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.market-view__panel-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.market-view__panel-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #909399;
 }
 
 .market-view__aside {

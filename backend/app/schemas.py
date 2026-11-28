@@ -27,6 +27,42 @@ class MarketSeriesResponse(BaseModel):
     points: list[tuple[str, float]]
 
 
+class MarketCompareSeries(BaseModel):
+    name: str
+    category: str
+    base_date: date
+    base_value: float
+    latest_value: float
+    total_return: float
+    values: list[float | None]
+
+
+class MarketCompareResponse(BaseModel):
+    days: int | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    dates: list[str]
+    items: list[MarketCompareSeries]
+
+
+class MarketRankingItem(BaseModel):
+    name: str
+    category: str
+    start_date: date
+    end_date: date
+    start_value: float
+    end_value: float
+    return_rate: float
+    sample_count: int
+
+
+class MarketRankingResponse(BaseModel):
+    days: int | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    items: list[MarketRankingItem]
+
+
 class NewsListItem(BaseModel):
     id: str
     date: date | None

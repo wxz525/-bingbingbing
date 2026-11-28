@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
-import { getMarketSeries, listMarketAssets } from '@/api/market'
+import { getMarketCompare, getMarketRanking, getMarketSeries, listMarketAssets } from '@/api/market'
+import MarketCompareChart from '@/components/MarketCompareChart.vue'
 import MarketLineChart from '@/components/MarketLineChart.vue'
-import type { MarketAsset, MarketSeries } from '@/types/market'
+import MarketRankingChart from '@/components/MarketRankingChart.vue'
+import type {
+  MarketAsset,
+  MarketCompareResponse,
+  MarketRankingResponse,
+  MarketSeries,
+} from '@/types/market'
 import { isAbortError } from '@/utils/format'
 
 type RangeKey = '1m' | '3m' | '1y' | '3y' | 'all'
+type ViewMode = 'single' | 'compare' | 'ranking'
 
 const RANGE_OPTIONS: { label: string; value: RangeKey; days: number | null }[] = [
   { label: '近1月', value: '1m', days: 31 },
@@ -24,6 +32,19 @@ const range = ref<RangeKey>('1y')
 const loading = ref(false)
 const assetLoading = ref(false)
 const errorMessage = ref('')
+
+const MAX_COMPARE = 5
+const viewMode = ref<ViewMode>('single')
+const compareNames = ref<string[]>([])
+const compareData = ref<MarketCompareResponse | null>(null)
+const compareLoading = ref(false)
+const compareError = ref('')
+const rankingData = ref<MarketRankingResponse | null>(null)
+const rankingLoading = ref(false)
+const rankingError = ref('')
+
+let compareController: AbortController | null = null
+let rankingController: AbortController | null = null
 
 let seriesController: AbortController | null = null
 
@@ -353,6 +374,132 @@ async function selectAsset(name: string): Promise<void> {
   }
 }
 
+function isComparable(asset: MarketAsset): boolean {
+  return asset.field !== 'yield'
+}
+
+const compareFull = computed(() => compareNames.value.length >= MAX_COMPARE)
+
+function onAssetClick(asset: MarketAsset): void {
+  if (viewMode.value !== 'compare') {
+    void selectAsset(asset.name)
+    return
+  }
+  if (!isComparable(asset)) {
+    return
+  }
+  if (compareNames.value.includes(asset.name)) {
+    compareNames.value = compareNames.value.filter((name) => name !== asset.name)
+    return
+  }
+  if (compareNames.value.length >= MAX_COMPARE) {
+    return
+  }
+  compareNames.value = [...compareNames.value, asset.name]
+}
+
+function currentDays(): number | null {
+  return RANGE_OPTIONS.find((item) => item.value === range.value)?.days ?? null
+}
+
+async function loadCompare(): Promise<void> {
+  if (compareNames.value.length < 2) {
+    compareController?.abort()
+    compareData.value = null
+    compareError.value = ''
+    compareLoading.value = false
+    return
+  }
+  compareController?.abort()
+  const controller = new AbortController()
+  compareController = controller
+  compareLoading.value = true
+  compareError.value = ''
+  try {
+    const response = await getMarketCompare(compareNames.value, currentDays(), controller.signal)
+    if (compareController !== controller) {
+      return
+    }
+    compareData.value = response
+  } catch (error) {
+    if (isAbortError(error) || compareController !== controller) {
+      return
+    }
+    compareData.value = null
+    compareError.value = error instanceof Error ? error.message : '对比数据加载失败'
+  } finally {
+    if (compareController === controller) {
+      compareLoading.value = false
+    }
+  }
+}
+
+async function loadRanking(): Promise<void> {
+  rankingController?.abort()
+  const controller = new AbortController()
+  rankingController = controller
+  rankingLoading.value = true
+  rankingError.value = ''
+  try {
+    const response = await getMarketRanking(currentDays(), controller.signal)
+    if (rankingController !== controller) {
+      return
+    }
+    rankingData.value = response
+  } catch (error) {
+    if (isAbortError(error) || rankingController !== controller) {
+      return
+    }
+    rankingData.value = null
+    rankingError.value = error instanceof Error ? error.message : '排行数据加载失败'
+  } finally {
+    if (rankingController === controller) {
+      rankingLoading.value = false
+    }
+  }
+}
+
+function onRankingSelect(name: string): void {
+  viewMode.value = 'single'
+  void selectAsset(name)
+}
+
+watch(viewMode, (mode) => {
+  if (mode === 'compare') {
+    if (!compareNames.value.length && selectedName.value) {
+      const defaults = [selectedName.value]
+      for (const name of ['沪深300', '中证500', '标普500', 'COMEX黄金期货']) {
+        if (defaults.length >= 2) {
+          break
+        }
+        if (name !== selectedName.value && assets.value.some((asset) => asset.name === name)) {
+          defaults.push(name)
+        }
+      }
+      compareNames.value = defaults
+    }
+    void loadCompare()
+    return
+  }
+  if (mode === 'ranking') {
+    void loadRanking()
+  }
+})
+
+watch(compareNames, () => {
+  if (viewMode.value === 'compare') {
+    void loadCompare()
+  }
+})
+
+watch(range, () => {
+  if (viewMode.value === 'compare') {
+    void loadCompare()
+  } else if (viewMode.value === 'ranking') {
+    void loadRanking()
+  }
+})
+
 onMounted(loadAssets)
 </script>
 
@@ -377,9 +524,19 @@ onMounted(loadAssets)
             :key="asset.name"
             type="button"
             class="market-item"
-            :class="{ 'market-item--active': asset.name === selectedName }"
-            @click="selectAsset(asset.name)"
+            :class="{
+              'market-item--active': viewMode !== 'compare' && asset.name === selectedName,
+              'market-item--checked': viewMode === 'compare' && compareNames.includes(asset.name),
+              'market-item--disabled': viewMode === 'compare' && !isComparable(asset),
+            }"
+            @click="onAssetClick(asset)"
           >
+            <el-checkbox
+              v-if="viewMode === 'compare'"
+              class="market-item__check"
+              :model-value="compareNames.includes(asset.name)"
+              :disabled="!isComparable(asset) || (compareFull && !compareNames.includes(asset.name))"
+            />
             <span class="market-item__name">{{ asset.name }}</span>
             <span class="market-item__meta">{{ asset.wind_code ?? asset.field }}</span>
           </button>
@@ -405,14 +562,22 @@ onMounted(loadAssets)
           </div>
         </div>
 
-        <el-radio-group v-model="range" size="small">
-          <el-radio-button v-for="option in RANGE_OPTIONS" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </el-radio-button>
-        </el-radio-group>
+        <div class="market-view__toolbar">
+          <el-radio-group v-model="viewMode" size="small">
+            <el-radio-button value="single">走势</el-radio-button>
+            <el-radio-button value="compare">对比</el-radio-button>
+            <el-radio-button value="ranking">排行</el-radio-button>
+          </el-radio-group>
+
+          <el-radio-group v-model="range" size="small">
+            <el-radio-button v-for="option in RANGE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </div>
       </div>
 
-      <div v-if="stats" class="market-stats">
+      <div v-if="viewMode === 'single' && stats" class="market-stats">
         <div class="market-stat">
           <span class="market-stat__label">最新值</span>
           <span class="market-stat__value">{{ formatValue(stats.latest, stats.isYield) }}</span>
@@ -460,18 +625,84 @@ onMounted(loadAssets)
         show-icon
       />
 
-      <div v-loading="loading" class="market-view__chart">
-        <MarketLineChart
-          v-if="visiblePoints.length"
-          :points="visiblePoints"
-          :field="series?.field ?? 'close'"
+      <template v-if="viewMode === 'single'">
+        <div v-loading="loading" class="market-view__chart">
+          <MarketLineChart
+            v-if="visiblePoints.length"
+            :points="visiblePoints"
+            :field="series?.field ?? 'close'"
+          />
+          <el-empty
+            v-else-if="!loading && !errorMessage"
+            description="选择左侧标的后展示走势"
+            :image-size="90"
+          />
+        </div>
+      </template>
+
+      <template v-else-if="viewMode === 'compare'">
+        <p class="market-view__hint">
+          在左侧勾选 2–{{ MAX_COMPARE }} 个标的，统一换算到共同起点 = 100 对比涨跌（已选
+          {{ compareNames.length }}/{{ MAX_COMPARE }}）
+          <span v-if="compareData?.start_date">
+            · {{ compareData.start_date }} ~ {{ compareData.end_date }}
+          </span>
+          · 国债收益率类不参与对比
+        </p>
+
+        <el-alert
+          v-if="compareError"
+          :title="compareError"
+          type="error"
+          :closable="false"
+          show-icon
         />
-        <el-empty
-          v-else-if="!loading && !errorMessage"
-          description="选择左侧标的后展示走势"
-          :image-size="90"
+
+        <div v-loading="compareLoading" class="market-view__chart">
+          <MarketCompareChart
+            v-if="compareData && compareData.items.length"
+            :dates="compareData.dates"
+            :items="compareData.items"
+          />
+          <el-empty
+            v-else-if="!compareLoading && !compareError"
+            description="勾选至少 2 个标的开始对比"
+            :image-size="90"
+          />
+        </div>
+      </template>
+
+      <template v-else>
+        <p class="market-view__hint">
+          当前区间全部价格类标的涨跌排行
+          <span v-if="rankingData?.start_date">
+            · {{ rankingData.start_date }} ~ {{ rankingData.end_date }}
+          </span>
+          · 点击任意行切换到该标的走势
+        </p>
+
+        <el-alert
+          v-if="rankingError"
+          :title="rankingError"
+          type="error"
+          :closable="false"
+          show-icon
         />
-      </div>
+
+        <div v-loading="rankingLoading" class="market-view__chart">
+          <MarketRankingChart
+            v-if="rankingData && rankingData.items.length"
+            :items="rankingData.items"
+            :selected-name="selectedName"
+            @select="onRankingSelect"
+          />
+          <el-empty
+            v-else-if="!rankingLoading && !rankingError"
+            description="当前区间暂无可排行标的"
+            :image-size="90"
+          />
+        </div>
+      </template>
     </section>
   </div>
 </template>
@@ -546,6 +777,29 @@ onMounted(loadAssets)
   font-weight: 600;
 }
 
+.market-item--checked {
+  background: #f0f7ff;
+  color: #409eff;
+}
+
+.market-item--disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+
+.market-item__check {
+  pointer-events: none;
+  margin-right: 2px;
+  height: 16px;
+}
+
+.market-item__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .market-item__meta {
   font-size: 11px;
   color: #c0c4cc;
@@ -569,6 +823,19 @@ onMounted(loadAssets)
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.market-view__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.market-view__hint {
+  margin: 0;
+  font-size: 12px;
+  color: #909399;
 }
 
 .market-view__title {

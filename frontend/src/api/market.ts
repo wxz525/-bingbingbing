@@ -1,10 +1,19 @@
-import type { MarketAssetListResponse, MarketSeries } from '@/types/market'
+import type {
+  MarketAssetListResponse,
+  MarketCompareResponse,
+  MarketRankingResponse,
+  MarketSeries,
+} from '@/types/market'
 import { ApiRequestError, getApiBaseUrl } from '@/api/http'
 import { isAbortError } from '@/utils/format'
 
 export const MARKET_PATHS = {
   assets: '/api/v1/market/assets',
   series: (name: string) => `/api/v1/market/series/${encodeURIComponent(name)}`,
+  compare: (names: string[], days: number | null) =>
+    `/api/v1/market/compare?names=${encodeURIComponent(names.join(','))}${days === null ? '' : `&days=${days}`}`,
+  ranking: (days: number | null) =>
+    days === null ? '/api/v1/market/ranking' : `/api/v1/market/ranking?days=${days}`,
 }
 
 async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -50,4 +59,19 @@ export function listMarketAssets(signal?: AbortSignal): Promise<MarketAssetListR
 
 export function getMarketSeries(name: string, signal?: AbortSignal): Promise<MarketSeries> {
   return requestJson<MarketSeries>(MARKET_PATHS.series(name), signal)
+}
+
+export function getMarketCompare(
+  names: string[],
+  days: number | null,
+  signal?: AbortSignal,
+): Promise<MarketCompareResponse> {
+  return requestJson<MarketCompareResponse>(MARKET_PATHS.compare(names, days), signal)
+}
+
+export function getMarketRanking(
+  days: number | null,
+  signal?: AbortSignal,
+): Promise<MarketRankingResponse> {
+  return requestJson<MarketRankingResponse>(MARKET_PATHS.ranking(days), signal)
 }

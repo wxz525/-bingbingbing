@@ -3,28 +3,34 @@ import { computed, onMounted, ref, watch } from 'vue'
 
 import {
   getMarketCompare,
-  getMarketIndicator,
   getMarketIndicators,
   getMarketRanking,
   getMarketSeries,
   listMarketAssets,
 } from '@/api/market'
 import MarketCompareChart from '@/components/MarketCompareChart.vue'
-import MarketIndicatorChart from '@/components/MarketIndicatorChart.vue'
 import MarketLineChart from '@/components/MarketLineChart.vue'
 import MarketRankingChart from '@/components/MarketRankingChart.vue'
 import type {
   MarketAsset,
   MarketCompareResponse,
-  MarketIndicator,
   MarketIndicatorSummary,
   MarketRankingResponse,
   MarketSeries,
 } from '@/types/market'
 import { isAbortError } from '@/utils/format'
+import {
+  formatIndicatorValue,
+  formatSpreadValue,
+  indicatorsForAsset,
+} from '@/utils/indicatorAnalysis'
 
 type RangeKey = '1m' | '3m' | '1y' | '3y' | 'all'
 type ViewMode = 'single' | 'compare' | 'ranking'
+
+const emit = defineEmits<{
+  (event: 'open-research', key: string): void
+}>()
 
 const RANGE_OPTIONS: { label: string; value: RangeKey; days: number | null }[] = [
   { label: '近1月', value: '1m', days: 31 },
@@ -53,8 +59,6 @@ const rankingData = ref<MarketRankingResponse | null>(null)
 const rankingLoading = ref(false)
 const rankingError = ref('')
 const indicatorItems = ref<MarketIndicatorSummary[]>([])
-const indicatorKey = ref('gold_silver')
-const indicatorData = ref<MarketIndicator | null>(null)
 const indicatorLoading = ref(false)
 const indicatorError = ref('')
 
@@ -480,62 +484,73 @@ function onRankingSelect(name: string): void {
   void selectAsset(name)
 }
 
-const indicatorGroups = computed(() => {
-  const ratio = indicatorItems.value.filter((item) => item.kind === 'ratio')
-  const spread = indicatorItems.value.filter((item) => item.kind === 'spread')
-  return [
-    { kind: 'ratio', label: '比值', items: ratio },
-    { kind: 'spread', label: '利差', items: spread },
-  ].filter((group) => group.items.length > 0)
+function relatedValueText(summary: MarketIndicatorSummary | null): string {
+  if (!summary) {
+    return '--'
+  }
+  return summary.kind === 'spread'
+    ? formatSpreadValue(summary.latest, 'bp')
+    : formatIndicatorValue(summary.latest, { kind: 'ratio' })
+}
+
+function relatedChangeText(summary: MarketIndicatorSummary | null): string {
+  if (!summary) {
+    return '--'
+  }
+  if (summary.kind === 'spread') {
+    return formatSpreadValue(summary.change, 'bp', { signed: true })
+  }
+  if (summary.change_pct !== null && Number.isFinite(summary.change_pct)) {
+    return `${summary.change_pct > 0 ? '+' : ''}${summary.change_pct.toFixed(2)}%`
+  }
+  return `${summary.change > 0 ? '+' : ''}${summary.change.toFixed(2)}`
+}
+
+function relatedDirection(summary: MarketIndicatorSummary | null): 'up' | 'down' | 'flat' {
+  if (!summary || summary.change === 0) {
+    return 'flat'
+  }
+  return summary.change > 0 ? 'up' : 'down'
+}
+
+const relatedIndicators = computed(() => {
+  const name = selectedAsset.value?.name
+  if (!name) {
+    return []
+  }
+  return indicatorsForAsset(name).map((definition) => {
+    const summary = indicatorItems.value.find((item) => item.key === definition.key) ?? null
+    return { definition, summary }
+  })
 })
 
-function formatIndicatorValue(item: { latest: number; unit: string }): string {
-  return item.unit === 'pp' ? `${item.latest.toFixed(2)} pp` : item.latest.toFixed(2)
+function openRelatedResearch(key?: string): void {
+  emit('open-research', key ?? relatedIndicators.value[0]?.definition.key ?? 'gold_silver')
 }
 
 async function loadIndicators(): Promise<void> {
-  try {
-    const response = await getMarketIndicators(currentDays())
-    indicatorItems.value = response.items
-  } catch (error) {
-    if (!isAbortError(error)) {
-      indicatorItems.value = []
-      indicatorError.value = error instanceof Error ? error.message : '指标列表加载失败'
-    }
-  }
-}
-
-async function loadIndicatorSeries(): Promise<void> {
   indicatorController?.abort()
   const controller = new AbortController()
   indicatorController = controller
   indicatorLoading.value = true
   indicatorError.value = ''
   try {
-    const response = await getMarketIndicator(indicatorKey.value, currentDays(), controller.signal)
+    const response = await getMarketIndicators(currentDays(), controller.signal)
     if (indicatorController !== controller) {
       return
     }
-    indicatorData.value = response
+    indicatorItems.value = response.items
   } catch (error) {
     if (isAbortError(error) || indicatorController !== controller) {
       return
     }
-    indicatorData.value = null
-    indicatorError.value = error instanceof Error ? error.message : '指标数据加载失败'
+    indicatorItems.value = []
+    indicatorError.value = error instanceof Error ? error.message : '指标列表加载失败'
   } finally {
     if (indicatorController === controller) {
       indicatorLoading.value = false
     }
   }
-}
-
-function selectIndicator(key: string): void {
-  if (indicatorKey.value === key) {
-    return
-  }
-  indicatorKey.value = key
-  void loadIndicatorSeries()
 }
 
 watch(viewMode, (mode) => {
@@ -573,7 +588,6 @@ watch(range, () => {
     void loadRanking()
   }
   void loadIndicators()
-  void loadIndicatorSeries()
 })
 
 const rangeLabel = computed(
@@ -583,7 +597,6 @@ const rangeLabel = computed(
 onMounted(() => {
   void loadAssets()
   void loadIndicators()
-  void loadIndicatorSeries()
 })
 </script>
 
@@ -791,17 +804,19 @@ onMounted(() => {
 
     </section>
 
-    <section class="market-view__indicator-panel">
-      <div class="market-view__panel-head">
+    <section class="market-view__related">
+      <div class="market-view__related-head">
         <div>
-          <h3 class="market-view__panel-title">比值 / 利差</h3>
-          <p class="market-view__panel-hint">
-            由现有行情序列实时折算：比值 = 分子 / 分母，利差 = 分子 − 分母（单位 pp）· 区间跟随上方「{{ rangeLabel }}」· 点击指标切换
+          <h3 class="market-view__related-title">关联比值与利差</h3>
+          <p class="market-view__related-hint">
+            {{
+              selectedAsset
+                ? `与「${selectedAsset.name}」直接相关的指标摘要 · 区间跟随「${rangeLabel}」`
+                : '选择左侧标的后展示与其相关的指标'
+            }}
           </p>
         </div>
-        <el-tag size="small" type="info" effect="plain">
-          {{ indicatorItems.length }} 个指标
-        </el-tag>
+        <el-button size="small" plain @click="openRelatedResearch()">查看完整研究</el-button>
       </div>
 
       <el-alert
@@ -812,69 +827,41 @@ onMounted(() => {
         show-icon
       />
 
-      <div class="indicator-chips">
-        <div v-for="group in indicatorGroups" :key="group.kind" class="indicator-chips__group">
-          <span class="indicator-chips__label">{{ group.label }}</span>
-          <button
-            v-for="item in group.items"
-            :key="item.key"
-            type="button"
-            class="indicator-chip"
-            :class="{ 'indicator-chip--active': item.key === indicatorKey }"
-            @click="selectIndicator(item.key)"
+      <div v-loading="indicatorLoading" class="related-grid">
+        <button
+          v-for="entry in relatedIndicators"
+          :key="entry.definition.key"
+          type="button"
+          class="related-card"
+          @click="openRelatedResearch(entry.definition.key)"
+        >
+          <span class="related-card__name">{{ entry.definition.name }}</span>
+          <span class="related-card__value">{{ relatedValueText(entry.summary) }}</span>
+          <span
+            class="related-card__change"
+            :class="`related-card__change--${relatedDirection(entry.summary)}`"
           >
-            <span class="indicator-chip__name">{{ item.name }}</span>
-            <span class="indicator-chip__value">{{ formatIndicatorValue(item) }}</span>
-            <span class="indicator-chip__change" :class="item.change >= 0 ? 'is-up' : 'is-down'">
-              {{ item.change >= 0 ? '+' : '' }}{{ item.change.toFixed(2) }}
-            </span>
-          </button>
-        </div>
-      </div>
+            {{
+              relatedDirection(entry.summary) === 'up'
+                ? '↑'
+                : relatedDirection(entry.summary) === 'down'
+                  ? '↓'
+                  : '·'
+            }}
+            {{ relatedChangeText(entry.summary) }}
+          </span>
+          <span class="related-card__hint">查看完整研究 →</span>
+        </button>
 
-      <div v-if="indicatorData" class="market-stats">
-        <div class="market-stat">
-          <span class="market-stat__label">最新值</span>
-          <span class="market-stat__value">{{ formatIndicatorValue(indicatorData) }}</span>
-          <span class="market-stat__hint">{{ indicatorData.name }}</span>
-        </div>
-        <div class="market-stat">
-          <span class="market-stat__label">区间变化</span>
-          <span class="market-stat__value" :class="indicatorData.change >= 0 ? 'is-up' : 'is-down'">
-            {{ indicatorData.change >= 0 ? '+' : '' }}{{ indicatorData.change.toFixed(2) }}
-          </span>
-          <span class="market-stat__hint">{{ indicatorData.start_date }} 起</span>
-        </div>
-        <div class="market-stat">
-          <span class="market-stat__label">区间最高 / 最低</span>
-          <span class="market-stat__value market-stat__value--small">
-            {{ indicatorData.max_value.toFixed(2) }} / {{ indicatorData.min_value.toFixed(2) }}
-          </span>
-          <span class="market-stat__hint">样本 {{ indicatorData.points.length }} 条</span>
-        </div>
-        <div class="market-stat">
-          <span class="market-stat__label">数据区间</span>
-          <span class="market-stat__value market-stat__value--small">
-            {{ indicatorData.start_date }} ~ {{ indicatorData.end_date }}
-          </span>
-          <span class="market-stat__hint">分子 / 分母取并集日期对齐</span>
-        </div>
-      </div>
-
-      <div v-loading="indicatorLoading" class="market-view__chart">
-        <MarketIndicatorChart
-          v-if="indicatorData && indicatorData.points.length"
-          :points="indicatorData.points"
-          :unit="indicatorData.unit"
-          :kind="indicatorData.kind"
-        />
-        <el-empty
-          v-else-if="!indicatorLoading && !indicatorError"
-          description="选择指标后展示走势"
-          :image-size="90"
-        />
+        <p
+          v-if="!indicatorLoading && !indicatorError && !relatedIndicators.length"
+          class="market-view__related-empty"
+        >
+          当前标的暂无直接相关的比值或利差指标，可前往关联研究查看全部指标。
+        </p>
       </div>
     </section>
+
     </div>
   </div>
 </template>
@@ -894,17 +881,17 @@ onMounted(() => {
   gap: 16px;
 }
 
-.market-view__indicator-panel {
+.market-view__related {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px;
+  gap: 12px;
+  padding: 18px 20px;
   border-radius: 10px;
   background: #ffffff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
-.market-view__panel-head {
+.market-view__related-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -912,15 +899,72 @@ onMounted(() => {
   gap: 10px;
 }
 
-.market-view__panel-title {
+.market-view__related-title {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #303133;
 }
 
-.market-view__panel-hint {
+.market-view__related-hint {
   margin: 4px 0 0;
+  font-size: 12px;
+  color: #909399;
+}
+
+.related-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.related-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #f8fafd;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.related-card:hover {
+  border-color: #b3d8ff;
+  background: #f2f7ff;
+}
+
+.related-card__name {
+  font-size: 12px;
+  color: #606266;
+}
+
+.related-card__value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+  font-variant-numeric: tabular-nums;
+}
+
+.related-card__change {
+  font-size: 12px;
+  color: #909399;
+  font-variant-numeric: tabular-nums;
+}
+
+.related-card__hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #409eff;
+}
+
+.market-view__related-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px 0;
   font-size: 12px;
   color: #909399;
 }
@@ -1047,64 +1091,6 @@ onMounted(() => {
   margin: 0;
   font-size: 12px;
   color: #909399;
-}
-
-.indicator-chips {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.indicator-chips__group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.indicator-chips__label {
-  flex: 0 0 32px;
-  font-size: 12px;
-  color: #909399;
-}
-
-.indicator-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  background: #fafbfc;
-  font-size: 12px;
-  color: #303133;
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-
-.indicator-chip:hover {
-  border-color: #c6e2ff;
-  background: #f5f9ff;
-}
-
-.indicator-chip--active {
-  border-color: #409eff;
-  background: #ecf5ff;
-  color: #409eff;
-  font-weight: 600;
-}
-
-.indicator-chip__value {
-  font-variant-numeric: tabular-nums;
-  color: #606266;
-}
-
-.indicator-chip--active .indicator-chip__value {
-  color: #409eff;
-}
-
-.indicator-chip__change {
-  font-variant-numeric: tabular-nums;
 }
 
 .market-view__title {

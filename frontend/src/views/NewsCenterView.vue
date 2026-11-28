@@ -445,6 +445,20 @@ function formatCount(value: number): string {
   return String(value)
 }
 
+function share(part: number, total: number): string {
+  if (!total) {
+    return '0%'
+  }
+  return `${((part / total) * 100).toFixed(2)}%`
+}
+
+function shareText(part: number, total: number): string {
+  if (!total) {
+    return '0%'
+  }
+  return `${((part / total) * 100).toFixed(1)}%`
+}
+
 onMounted(() => {
   void loadNewsMeta()
   void loadNews()
@@ -916,24 +930,39 @@ onBeforeUnmount(() => {
             @click="sentimentTopic = topic.topic; reloadSentimentSeries()"
           >
             <span class="sentiment-card__label">{{ TOPIC_LABEL[topic.topic] ?? topic.topic }}</span>
-            <span
-              v-if="topic.news_bullish + topic.news_bearish + topic.news_neutral > 0"
-              class="sentiment-card__bar"
-            >
+            <span class="sentiment-card__stack" aria-hidden="true">
               <i
-                class="sentiment-card__bar-bull"
-                :style="{ width: `${(topic.news_bullish / topic.news_total) * 100}%` }"
+                class="sentiment-card__stack-seg sentiment-card__stack-seg--bull"
+                :style="{ width: share(topic.news_bullish, topic.news_total) }"
               ></i>
               <i
-                class="sentiment-card__bar-bear"
-                :style="{ width: `${(topic.news_bearish / topic.news_total) * 100}%` }"
+                class="sentiment-card__stack-seg sentiment-card__stack-seg--neutral"
+                :style="{ width: share(topic.news_neutral, topic.news_total) }"
               ></i>
+              <i
+                class="sentiment-card__stack-seg sentiment-card__stack-seg--bear"
+                :style="{ width: share(topic.news_bearish, topic.news_total) }"
+              ></i>
+            </span>
+            <span class="sentiment-card__legend">
+              <span class="sentiment-card__legend-item">
+                <i class="sentiment-card__dot sentiment-card__dot--bull"></i>
+                利好 {{ formatCount(topic.news_bullish) }}（{{ shareText(topic.news_bullish, topic.news_total) }}）
+              </span>
+              <span class="sentiment-card__legend-item">
+                <i class="sentiment-card__dot sentiment-card__dot--neutral"></i>
+                中性 {{ formatCount(topic.news_neutral) }}（{{ shareText(topic.news_neutral, topic.news_total) }}）
+              </span>
+              <span class="sentiment-card__legend-item">
+                <i class="sentiment-card__dot sentiment-card__dot--bear"></i>
+                利空 {{ formatCount(topic.news_bearish) }}（{{ shareText(topic.news_bearish, topic.news_total) }}）
+              </span>
             </span>
             <span class="sentiment-card__meta">
-              新闻 {{ formatCount(topic.news_total) }} · 利好 {{ formatCount(topic.news_bullish) }} / 利空 {{ formatCount(topic.news_bearish) }}
+              新闻共 {{ formatCount(topic.news_total) }} 条
             </span>
             <span class="sentiment-card__meta sentiment-card__meta--summary">
-              机构摘要 {{ formatCount(topic.summary_total) }} · 利好 {{ formatCount(topic.summary_bullish) }} / 利空 {{ formatCount(topic.summary_bearish) }}
+              机构摘要 {{ formatCount(topic.summary_total) }} 篇 · 利好 {{ formatCount(topic.summary_bullish) }} / 利空 {{ formatCount(topic.summary_bearish) }}
             </span>
           </button>
           <el-empty
@@ -1229,19 +1258,64 @@ onBeforeUnmount(() => {
   color: #303133;
 }
 
-.sentiment-card__bar {
+.sentiment-card__stack {
   display: flex;
-  height: 6px;
-  border-radius: 3px;
+  height: 10px;
+  border-radius: 5px;
   overflow: hidden;
-  background: #e4e7ed;
+  background: #f0f2f5;
 }
 
-.sentiment-card__bar-bull {
+.sentiment-card__stack-seg {
+  display: block;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.sentiment-card__stack-seg--bull {
   background: #67c23a;
 }
 
-.sentiment-card__bar-bear {
+.sentiment-card__stack-seg--neutral {
+  background: #c8cdd4;
+}
+
+.sentiment-card__stack-seg--bear {
+  background: #f56c6c;
+}
+
+.sentiment-card__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: #606266;
+  line-height: 1.5;
+}
+
+.sentiment-card__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.sentiment-card__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.sentiment-card__dot--bull {
+  background: #67c23a;
+}
+
+.sentiment-card__dot--neutral {
+  background: #c8cdd4;
+}
+
+.sentiment-card__dot--bear {
   background: #f56c6c;
 }
 

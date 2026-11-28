@@ -38,7 +38,9 @@ INDICATOR_DEFINITIONS: list[dict[str, str]] = [
         "unit": "倍",
         "numerator": "COMEX黄金期货",
         "denominator": "COMEX铜期货",
-        "description": "黄金 / 铜，上行代表避险需求走强或增长预期走弱",
+        # 铜价为美元/磅，换算为美元/吨后再与黄金（美元/盎司）相除，统一重量单位
+        "denominator_scale": "2204.62262185",
+        "description": "黄金（美元/盎司）/ 铜（美元/吨），上行代表避险需求走强或增长预期走弱",
     },
     {
         "key": "csi300_csi500",
@@ -329,6 +331,8 @@ class MarketService:
         numerator_map = dict(numerator)
         denominator_map = dict(denominator)
         is_ratio = definition["kind"] == "ratio"
+        numerator_scale = float(definition.get("numerator_scale", "1"))
+        denominator_scale = float(definition.get("denominator_scale", "1"))
 
         result: list[tuple[str, float]] = []
         last_numerator: float | None = None
@@ -343,9 +347,20 @@ class MarketService:
             if is_ratio:
                 if last_denominator == 0:
                     continue
-                result.append((date_text, last_numerator / last_denominator))
+                result.append(
+                    (
+                        date_text,
+                        (last_numerator * numerator_scale)
+                        / (last_denominator * denominator_scale),
+                    )
+                )
             else:
-                result.append((date_text, last_numerator - last_denominator))
+                result.append(
+                    (
+                        date_text,
+                        last_numerator * numerator_scale - last_denominator * denominator_scale,
+                    )
+                )
 
         self._indicator_cache[key] = result
         return result

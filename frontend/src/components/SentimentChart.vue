@@ -35,7 +35,7 @@ const bars = computed(() =>
       width: Math.max(1, bandWidth.value - 1),
       y: Math.min(zeroY.value, scoreY),
       height: Math.abs(zeroY.value - scoreY),
-      fill: point.score > 0 ? '#67C23A' : point.score < 0 ? '#F56C6C' : '#C0C4CC',
+      fill: point.score > 0 ? '#F56C6C' : point.score < 0 ? '#67C23A' : '#C0C4CC',
       opacity: point.score === 0 ? 0.25 : 0.8,
       title: `${point.date}｜利好 ${point.bullish} · 利空 ${point.bearish} · 中性 ${point.neutral}（共 ${point.total} 条）`,
     }
@@ -96,7 +96,7 @@ const markers = computed(() => {
       const cx = PADDING.left + best * bandWidth.value + bandWidth.value / 2 + ((index % 3) - 1) * 5
       const cy = yFor(bucketScore) + (bucketScore >= 0 ? -12 : 12)
       const sentiment = summary.sentiment ?? 'neutral'
-      const color = sentiment === 'bullish' ? '#67C23A' : sentiment === 'bearish' ? '#F56C6C' : '#909399'
+      const color = sentiment === 'bullish' ? '#F56C6C' : sentiment === 'bearish' ? '#67C23A' : '#909399'
       const label =
         sentiment === 'bullish' ? '利好' : sentiment === 'bearish' ? '利空' : '中性'
       const title = `${summary.date ?? ''} ${summary.institution ?? ''}｜机构观点：${label}｜${summary.title}`
@@ -140,7 +140,7 @@ const yLabels = [-1, -0.5, 0, 0.5, 1]
       <span class="legend-item"><i class="legend-swatch legend-swatch--ma"></i>7 期均值</span>
       <span class="legend-item">
         <svg width="14" height="14" viewBox="0 0 14 14">
-          <polygon points="7,2 2,11 12,11" fill="#67C23A" />
+          <polygon points="7,2 2,11 12,11" fill="#F56C6C" />
         </svg>
         机构观点（利涨/利跌/中性）
       </span>
@@ -222,7 +222,7 @@ const yLabels = [-1, -0.5, 0, 0.5, 1]
 }
 
 .legend-swatch--bar {
-  background: linear-gradient(180deg, #67c23a 50%, #f56c6c 50%);
+  background: linear-gradient(180deg, #f56c6c 50%, #67c23a 50%);
   opacity: 0.8;
 }
 

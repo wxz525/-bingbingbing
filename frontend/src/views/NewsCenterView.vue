@@ -56,9 +56,9 @@ const LEVEL_LABEL: Record<string, string> = Object.fromEntries(
   LEVEL_OPTIONS.map((o) => [o.value, o.label]),
 )
 const SENTIMENT_TYPE: Record<string, 'success' | 'info' | 'danger'> = {
-  bullish: 'success',
+  bullish: 'danger',
   neutral: 'info',
-  bearish: 'danger',
+  bearish: 'success',
 }
 
 const activeSection = ref<'news' | 'summaries'>('news')
@@ -1273,7 +1273,7 @@ onBeforeUnmount(() => {
 }
 
 .sentiment-card__stack-seg--bull {
-  background: #67c23a;
+  background: #f56c6c;
 }
 
 .sentiment-card__stack-seg--neutral {
@@ -1281,7 +1281,7 @@ onBeforeUnmount(() => {
 }
 
 .sentiment-card__stack-seg--bear {
-  background: #f56c6c;
+  background: #67c23a;
 }
 
 .sentiment-card__legend {
@@ -1308,7 +1308,7 @@ onBeforeUnmount(() => {
 }
 
 .sentiment-card__dot--bull {
-  background: #67c23a;
+  background: #f56c6c;
 }
 
 .sentiment-card__dot--neutral {
@@ -1316,7 +1316,7 @@ onBeforeUnmount(() => {
 }
 
 .sentiment-card__dot--bear {
-  background: #f56c6c;
+  background: #67c23a;
 }
 
 .sentiment-card__meta {

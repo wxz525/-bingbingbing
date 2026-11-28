@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
-import { getMarketScatter, getMarketSeries, listMarketAssets } from '@/api/market'
+import { getMarketSeries, listMarketAssets } from '@/api/market'
 import MarketLineChart from '@/components/MarketLineChart.vue'
-import RiskReturnScatter from '@/components/RiskReturnScatter.vue'
-import type { MarketAsset, MarketScatterPoint, MarketSeries } from '@/types/market'
+import type { MarketAsset, MarketSeries } from '@/types/market'
 import { isAbortError } from '@/utils/format'
 
 type RangeKey = '1m' | '3m' | '1y' | '3y' | 'all'
@@ -25,11 +24,6 @@ const range = ref<RangeKey>('1y')
 const loading = ref(false)
 const assetLoading = ref(false)
 const errorMessage = ref('')
-
-const scatterItems = ref<MarketScatterPoint[]>([])
-const scatterLoading = ref(false)
-const scatterError = ref('')
-let scatterController: AbortController | null = null
 
 let seriesController: AbortController | null = null
 
@@ -359,44 +353,7 @@ async function selectAsset(name: string): Promise<void> {
   }
 }
 
-const rangeLabel = computed(
-  () => RANGE_OPTIONS.find((item) => item.value === range.value)?.label ?? '',
-)
-
-async function loadScatter(): Promise<void> {
-  scatterController?.abort()
-  const controller = new AbortController()
-  scatterController = controller
-  scatterLoading.value = true
-  scatterError.value = ''
-  try {
-    const option = RANGE_OPTIONS.find((item) => item.value === range.value)
-    const response = await getMarketScatter(option?.days ?? null, controller.signal)
-    if (scatterController !== controller) {
-      return
-    }
-    scatterItems.value = response.items
-  } catch (error) {
-    if (isAbortError(error) || scatterController !== controller) {
-      return
-    }
-    scatterItems.value = []
-    scatterError.value = error instanceof Error ? error.message : '风险收益统计加载失败'
-  } finally {
-    if (scatterController === controller) {
-      scatterLoading.value = false
-    }
-  }
-}
-
-watch(range, () => {
-  void loadScatter()
-})
-
-onMounted(() => {
-  void loadAssets()
-  void loadScatter()
-})
+onMounted(loadAssets)
 </script>
 
 <template>
@@ -515,44 +472,6 @@ onMounted(() => {
           :image-size="90"
         />
       </div>
-
-      <section class="market-view__scatter">
-        <div class="market-view__scatter-head">
-          <div>
-            <h3 class="market-view__scatter-title">风险 - 收益分布</h3>
-            <p class="market-view__scatter-hint">
-              {{ rangeLabel }}年化口径 · 横轴为年化波动率，纵轴为年化收益率 · 双轴对数刻度，可同时容纳低波动标的与极端值 · 点击圆点切换标的
-            </p>
-          </div>
-          <el-tag size="small" type="info" effect="plain">{{ scatterItems.length }} 个标的</el-tag>
-        </div>
-
-        <el-alert
-          v-if="scatterError"
-          :title="scatterError"
-          type="error"
-          :closable="false"
-          show-icon
-        />
-
-        <div v-loading="scatterLoading" class="market-view__scatter-body">
-          <RiskReturnScatter
-            v-if="scatterItems.length"
-            :items="scatterItems"
-            :selected-name="selectedName"
-            @select="selectAsset"
-          />
-          <el-empty
-            v-else-if="!scatterLoading && !scatterError"
-            description="暂无可统计的标的"
-            :image-size="80"
-          />
-        </div>
-
-        <p class="market-view__scatter-foot">
-          注：国债收益率等利率类指标无法折算价格收益，未纳入统计。
-        </p>
-      </section>
     </section>
   </div>
 </template>
@@ -713,43 +632,6 @@ onMounted(() => {
 
 .market-view__chart {
   min-height: 360px;
-}
-
-.market-view__scatter {
-  padding-top: 14px;
-  border-top: 1px solid #f0f2f5;
-}
-
-.market-view__scatter-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.market-view__scatter-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.market-view__scatter-hint {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #909399;
-}
-
-.market-view__scatter-body {
-  min-height: 380px;
-}
-
-.market-view__scatter-foot {
-  margin: 6px 0 0;
-  font-size: 11px;
-  color: #c0c4cc;
 }
 
 @media (max-width: 900px) {

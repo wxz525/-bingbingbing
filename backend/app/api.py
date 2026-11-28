@@ -2,7 +2,6 @@ from fastapi import APIRouter, Query, Request
 
 from app.schemas import (
     MarketAssetListResponse,
-    MarketScatterResponse,
     MarketSeriesResponse,
     NewsDetailResponse,
     NewsListResponse,
@@ -34,14 +33,6 @@ def list_market_assets(request: Request) -> MarketAssetListResponse:
 @market_router.get("/series/{name}", response_model=MarketSeriesResponse)
 def get_market_series(request: Request, name: str) -> MarketSeriesResponse:
     return _market_service(request).get_series(name)
-
-
-@market_router.get("/scatter", response_model=MarketScatterResponse)
-def market_risk_return(
-    request: Request,
-    days: int | None = Query(default=None, ge=20, le=11000),
-) -> MarketScatterResponse:
-    return _market_service(request).get_scatter(days)
 
 
 @news_router.get("/news/meta", response_model=NewsMetaResponse)

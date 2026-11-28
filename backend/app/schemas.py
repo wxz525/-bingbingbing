@@ -27,6 +27,27 @@ class MarketSeriesResponse(BaseModel):
     points: list[tuple[str, float]]
 
 
+class MarketScatterPoint(BaseModel):
+    name: str
+    category: str
+    wind_code: str | None = None
+    annual_return: float
+    annual_volatility: float
+    sharpe: float | None = None
+    max_drawdown: float
+    start_date: date
+    end_date: date
+    sample_count: int
+
+
+class MarketScatterResponse(BaseModel):
+    years: int | None = None
+    latest_date: date | None = None
+    risk_free_rate: float
+    items: list[MarketScatterPoint]
+    excluded: list[str] = []
+
+
 class NewsListItem(BaseModel):
     id: str
     date: date | None

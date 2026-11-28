@@ -1,10 +1,12 @@
-import type { MarketAssetListResponse, MarketSeries } from '@/types/market'
+import type { MarketAssetListResponse, MarketScatterResponse, MarketSeries } from '@/types/market'
 import { ApiRequestError, getApiBaseUrl } from '@/api/http'
 import { isAbortError } from '@/utils/format'
 
 export const MARKET_PATHS = {
   assets: '/api/v1/market/assets',
   series: (name: string) => `/api/v1/market/series/${encodeURIComponent(name)}`,
+  scatter: (years: number | null) =>
+    years === null ? '/api/v1/market/scatter' : `/api/v1/market/scatter?years=${years}`,
 }
 
 async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -50,4 +52,11 @@ export function listMarketAssets(signal?: AbortSignal): Promise<MarketAssetListR
 
 export function getMarketSeries(name: string, signal?: AbortSignal): Promise<MarketSeries> {
   return requestJson<MarketSeries>(MARKET_PATHS.series(name), signal)
+}
+
+export function getMarketScatter(
+  years: number | null = 3,
+  signal?: AbortSignal,
+): Promise<MarketScatterResponse> {
+  return requestJson<MarketScatterResponse>(MARKET_PATHS.scatter(years), signal)
 }
